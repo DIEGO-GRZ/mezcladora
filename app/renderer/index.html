@@ -65,23 +65,21 @@
 
     <div>
       <div class="lbl mb6">Estilo de transición</div>
-      <div class="grid2" id="estilos">
-        <button class="btn on" data-estilo="1">Mezcla larga <kbd data-tecla="estilo1"></kbd></button>
-        <button class="btn" data-estilo="2" disabled data-pend="4">Corte <kbd data-tecla="estilo2"></kbd></button>
-        <button class="btn" data-estilo="3" disabled data-pend="4">Filtro <kbd data-tecla="estilo3"></kbd></button>
-        <button class="btn" data-estilo="4" disabled data-pend="4">Eco de salida <kbd data-tecla="estilo4"></kbd></button>
-        <button class="btn" data-estilo="5" disabled data-pend="4">Loop y subida <kbd data-tecla="estilo5"></kbd></button>
-        <button class="btn" data-estilo="6" disabled data-pend="4">Cambio de voz <kbd data-tecla="estilo6"></kbd></button>
+      <div class="row6" id="estilos">
+        <button class="btn mini on" data-estilo="1" title="Mezcla larga"><span>Larga</span><kbd data-tecla="estilo1"></kbd></button>
+        <button class="btn mini" data-estilo="2" disabled data-pend="4" title="Corte"><span>Corte</span><kbd data-tecla="estilo2"></kbd></button>
+        <button class="btn mini" data-estilo="3" disabled data-pend="4" title="Filtro"><span>Filtro</span><kbd data-tecla="estilo3"></kbd></button>
+        <button class="btn mini" data-estilo="4" disabled data-pend="4" title="Eco de salida"><span>Eco</span><kbd data-tecla="estilo4"></kbd></button>
+        <button class="btn mini" data-estilo="5" disabled data-pend="4" title="Loop y subida"><span>Loop</span><kbd data-tecla="estilo5"></kbd></button>
+        <button class="btn mini" data-estilo="6" disabled data-pend="4" title="Cambio de voz"><span>Voz</span><kbd data-tecla="estilo6"></kbd></button>
       </div>
     </div>
 
     <div class="transRow">
-      <button class="btn" id="fadeBtn"><span id="fadeTxt">8 s</span> <kbd data-tecla="fadeDur"></kbd></button>
+      <button class="btn mini" id="fadeBtn" title="Duración de la transición"><span id="fadeTxt">8 s</span><kbd data-tecla="fadeDur"></kbd></button>
       <button class="btn go" id="autoBtn"><span id="autoTxt">TRANSICIÓN A → B</span> <kbd data-tecla="trans"></kbd></button>
-    </div>
-    <div class="grid2">
-      <button class="btn" id="cutBtn">Corte <kbd data-tecla="cut"></kbd></button>
-      <button class="btn" disabled data-pend="6">Bajar música <kbd data-tecla="talkover"></kbd></button>
+      <button class="btn mini" id="cutBtn" title="Corte instantáneo"><span>Corte</span><kbd data-tecla="cut"></kbd></button>
+      <button class="btn mini" disabled data-pend="6" title="Bajar la música mientras hablas (mantener)"><span>Bajar</span><kbd data-tecla="talkover"></kbd></button>
     </div>
     <div class="onair" id="onair">Al aire: A</div>
   </section>

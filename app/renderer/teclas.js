@@ -162,16 +162,19 @@ const Teclas = (() => {
     const m = /^(?:Key|Digit)(.)$/.exec(code);
     return m ? m[1] : code;
   }
-  function etiqueta(clave) {
+  // corta = para las etiquetas chicas en la esquina de los botones compactos
+  const CORTOS = { Espacio: 'Esp', Enter: 'Ent' };
+  function etiqueta(clave, corta = false) {
     const t = mapa[clave];
     if (!t) return '';
-    return `${t.shift ? '⇧' : ''}${nombreCode(t.code)}`;
+    const n = nombreCode(t.code);
+    return `${t.shift ? '⇧' : ''}${corta ? (CORTOS[n] || n) : n}`;
   }
 
   // Llena todos los <kbd data-tecla="..."> de la página
   function pintar(raiz = document) {
     raiz.querySelectorAll('kbd[data-tecla]').forEach(el => {
-      const txt = el.dataset.tecla === 'panic' ? 'Esc' : etiqueta(el.dataset.tecla);
+      const txt = el.dataset.tecla === 'panic' ? 'Esc' : etiqueta(el.dataset.tecla, !!el.closest('.mini'));
       el.textContent = txt;
       el.hidden = !txt;
     });

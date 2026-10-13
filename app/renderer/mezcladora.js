@@ -76,9 +76,12 @@ function holdParam(p) {
 }
 
 // ---------- Decks ----------
-// Botón de deck. pend = etapa en la que llega la función (se ve desactivado hasta entonces).
-const bot = (id, act, txt, pend) =>
-  `<button class="btn" data-act="${act}"${pend ? ` disabled data-pend="${pend}"` : ''}><span>${txt}</span> <kbd data-tecla="${id}.${act}"></kbd></button>`;
+// Botón compacto de deck: la tecla va en una etiqueta chica en la esquina y el nombre completo en el tooltip.
+// pend = etapa en la que llega la función (se ve desactivado hasta entonces).
+const bot = (id, act, txt, pend) => {
+  const nombre = Teclas.PORCLAVE[`${id}.${act}`]?.nombre || txt;
+  return `<button class="btn mini" data-act="${act}" title="${nombre}${pend ? ` · llega en la etapa ${pend}` : ''}"${pend ? ` disabled data-pend="${pend}"` : ''}><span>${txt}</span><kbd data-tecla="${id}.${act}"></kbd></button>`;
+};
 
 function deckHTML(id) {
   return `
@@ -93,37 +96,26 @@ function deckHTML(id) {
       <div class="bpmRow"><span class="lbl">BPM</span><span class="keyTag">—</span></div>
     </div>
   </div>
-  <div class="drop">Arrastra una canción o video aquí, o haz clic para elegir un archivo</div>
+  <div class="drop">Arrastra aquí una canción de la biblioteca o de una carpeta, o haz clic para elegir un archivo</div>
   <input type="file" accept="audio/*,video/*,.mkv,.mov" hidden>
   <div>
     <div class="bar"><div class="fill"></div><div class="mark"></div><div class="head"></div></div>
     <div class="times">
-      <span><span class="mono cur">0:00</span> transcurrido</span>
-      <span class="legend"><span class="y">▮</span> inicio · <span class="o">▮</span> salida</span>
-      <span><span class="mono rem">-0:00</span> restante</span>
+      <span class="mono cur">0:00</span>
+      <span class="markinfo"></span>
+      <span class="mono rem">-0:00</span>
     </div>
-    <div class="markinfo"></div>
   </div>
-  <div class="grid4 btns">
-    ${bot(id, 'play', '▶ Play')}${bot(id, 'cue', 'Audífonos')}${bot(id, 'mark', 'Marcar')}${bot(id, 'tomark', 'Al inicio')}
+  <div class="row8">
+    ${bot(id, 'play', '▶ Play')}${bot(id, 'cue', 'Audíf.')}${bot(id, 'mark', 'Marcar')}${bot(id, 'tomark', 'Inicio')}
     ${bot(id, 'back', '−5 s')}${bot(id, 'fwd', '+5 s')}${bot(id, 'loop', 'Loop 4', 4)}${bot(id, 'sync', 'Sync', 3)}
   </div>
-  <div>
-    <div class="lbl mb6">Stems</div>
-    <div class="grid4 stems">
-      ${bot(id, 'stemVoz', 'Voz', 2)}${bot(id, 'stemMel', 'Melodía', 2)}${bot(id, 'stemBajo', 'Bajo', 2)}${bot(id, 'stemBat', 'Batería', 2)}
-      ${bot(id, 'acapella', 'Acapella', 2)}${bot(id, 'instru', 'Instrumental', 2)}${bot(id, 'kick', 'Kick', 2)}${bot(id, 'hihat', 'HiHat', 2)}
-    </div>
+  <div class="row8 stems">
+    ${bot(id, 'stemVoz', 'Voz', 2)}${bot(id, 'stemMel', 'Melodía', 2)}${bot(id, 'stemBajo', 'Bajo', 2)}${bot(id, 'stemBat', 'Batería', 2)}
+    ${bot(id, 'acapella', 'Acapella', 2)}${bot(id, 'instru', 'Instru.', 2)}${bot(id, 'kick', 'Kick', 2)}${bot(id, 'hihat', 'HiHat', 2)}
   </div>
-  <div class="cuesFx">
-    <div>
-      <div class="lbl mb6">Hot cues <span class="norm">(⇧ = guardar)</span></div>
-      <div class="grid4">${[1, 2, 3, 4].map(n => bot(id, `cue${n}`, '—', 4)).join('')}</div>
-    </div>
-    <div>
-      <div class="lbl mb6">Efecto</div>
-      ${bot(id, 'fx', 'Eco ▾', 5)}
-    </div>
+  <div class="row5">
+    ${[1, 2, 3, 4].map(n => bot(id, `cue${n}`, `Cue ${n}`, 4)).join('')}${bot(id, 'fx', 'Eco ▾', 5)}
   </div>`;
 }
 
@@ -151,9 +143,17 @@ function createDeck(id) {
   const input = $('input[type=file]', el), drop = $('.drop', el);
   drop.addEventListener('click', () => input.click());
   input.addEventListener('change', () => { if (input.files[0]) loadFile(d, input.files[0]); input.value = ''; });
-  el.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
-  el.addEventListener('dragleave', e => { if (!el.contains(e.relatedTarget)) drop.classList.remove('over'); });
-  el.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) loadFile(d, f); });
+  // Soltar aquí una fila de la biblioteca o un archivo de una carpeta de Windows
+  el.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; el.classList.add('soltar'); });
+  el.addEventListener('dragleave', e => { if (!el.contains(e.relatedTarget)) el.classList.remove('soltar'); });
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    el.classList.remove('soltar');
+    const libId = Number(e.dataTransfer.getData(ARRASTRE_BIBLIOTECA));
+    if (libId) return soltarDeBiblioteca(d, libId);
+    const f = e.dataTransfer.files[0];
+    if (f) loadFile(d, f);
+  });
   // Clic en botones del deck y en el botón de audífonos del mixer (Shift+clic en Marcar = borrar)
   const alClic = e => {
     const b = e.target.closest('button[data-act]');
@@ -296,10 +296,10 @@ function renderMark(d) {
   const m = $('.mark', d.el), info = $('.markinfo', d.el), dur = d.audio.duration;
   if (d.mark != null && isFinite(dur) && dur > 0) {
     m.style.display = 'block'; m.style.left = `${(d.mark / dur) * 100}%`;
-    info.textContent = `Empieza en ${fmt(d.mark)} · ${Teclas.etiqueta(`${d.id}.clearMark`)} para borrar`;
+    info.textContent = `Inicio ${fmt(d.mark)} · ${Teclas.etiqueta(`${d.id}.clearMark`)} borra`;
   } else {
     m.style.display = 'none';
-    info.textContent = d.file ? `Sin marca: presiona ${Teclas.etiqueta(`${d.id}.mark`)} donde quieras que empiece` : '';
+    info.textContent = d.file ? `Sin marca · ${Teclas.etiqueta(`${d.id}.mark`)} marca el inicio` : '';
   }
 }
 function updatePlayBtn(d) {
@@ -631,7 +631,7 @@ function renderBiblioteca() {
     const dk = enDeck(c.id);
     const video = c.tipo !== 'video' ? '<td class="tSm na">audio</td>'
       : `<td class="tSm${c.alto && c.alto < 720 ? ' lowres' : ''}">${c.alto ? `${c.alto}p` : 'video'}</td>`;
-    return `<tr data-i="${i}" class="${i === lib.sel ? 'sel' : ''}${c.falta ? ' falta' : ''}${dk ? ' enDeck' : ''}">
+    return `<tr data-i="${i}" draggable="${!c.falta}" class="${i === lib.sel ? 'sel' : ''}${c.falta ? ' falta' : ''}${dk ? ' enDeck' : ''}">
       <td class="cDeck ${dk.slice(0, 1)}">${dk}</td>
       <td class="tTit" title="${esc(c.nombre)}">${esc(tituloDe(c))}${c.nombre_manual ? '<span class="manual" title="Corregido a mano">✎</span>' : ''}${c.falta ? ' <span class="tag">NO ENCONTRADO</span>' : ''}</td>
       <td class="tArt">${esc(c.artista)}</td>
@@ -743,6 +743,24 @@ $('.libNav').addEventListener('click', e => {
   filtrarBiblioteca();
   $('.libWrap').scrollTop = 0;
 });
+// --- Arrastrar una fila directo a un deck (sin tener que seleccionarla antes) ---
+const ARRASTRE_BIBLIOTECA = 'application/x-mezcladora-cancion';
+$('#libRows').addEventListener('dragstart', e => {
+  const fila = e.target.closest?.('tr[data-i]');
+  const c = fila && lib.vista[Number(fila.dataset.i)];
+  if (!c || c.falta) return e.preventDefault();
+  e.dataTransfer.setData(ARRASTRE_BIBLIOTECA, String(c.id));
+  e.dataTransfer.setData('text/plain', tituloDe(c));
+  e.dataTransfer.effectAllowed = 'copy';
+  fila.classList.add('arrastrando');
+});
+$('#libRows').addEventListener('dragend', e => e.target.closest?.('tr')?.classList.remove('arrastrando'));
+function soltarDeBiblioteca(d, id) {
+  initAudio();
+  const c = lib.canciones.find(x => x.id === id);
+  if (loadTrack(d, c)) { toast(`Deck ${d.id}: ${tituloDe(c)}`); renderBiblioteca(); }
+}
+
 $('#libScan').addEventListener('click', () => escanearBiblioteca(true));
 $('#libAdd').addEventListener('click', agregarCarpetaBiblioteca);
 

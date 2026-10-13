@@ -60,6 +60,7 @@ Se arranca con `npm start`. Lo que ya existe en `app/`:
 
 - Archivo: `diseno/Main.dc.html` (y `diseno/pantalla-dj.png` si existe). El `.dc.html` es **solo referencia** de layout, colores y textos: no se ejecuta tal cual. Ignorar `support.js`, `<x-dc>`, `<sc-for>` y la clase `DCLogic`; construir la interfaz real en `app/renderer/`.
 - Diseño en línea: https://claude.ai/artifact/HfcAoHLmwop1P5armGxkZz
+- **Vista única (pedido de Diego, referencia: su captura de VirtualDJ):** todo debe caber sin desplazar la página en su laptop (1536×816 útiles, escala 125 %): decks compactos (botones en filas de 8 con la tecla en una etiqueta chica en la esquina), biblioteca grande (~13 filas) y arrastre directo de filas de la biblioteca a un deck. La franja de formas de onda está oculta hasta la etapa 3.
 - Estructura de arriba a abajo: barra superior (modo DJ/Temas/Teatro, estado de bocinas/audífonos/TV, medidor maestro con limitador, botón Pánico) → formas de onda de A y B con cabezal al centro → Deck A | Mixer | Deck B → Biblioteca (carpetas, tabla, panel de video y cola de preparación).
 - Colores: fondo `#0D0F12`, paneles `#15181D`, controles `#1C2027`, bordes `#2A2F38`, texto `#E9ECF1`, texto secundario `#9AA3B2`, deck A `#2EC4E6`, deck B `#F0609E`, listo/al aire `#4ADE80`, aviso `#F5B942`, marca de salida `#FB923C`, pánico `#E5484D`.
 - Tipografías (Google Fonts, empaquetarlas localmente en Electron): Barlow (texto), Barlow Condensed (etiquetas y títulos), JetBrains Mono (BPM, tiempos, teclas).

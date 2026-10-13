@@ -229,34 +229,67 @@ select{background:var(--bg);color:var(--text);border:1px solid var(--line);borde
 .nameBtns{display:flex;gap:6px;align-items:center}
 .nameBtns span{flex:1}
 
+/* ---------- Vista única (como VirtualDJ): decks compactos, biblioteca grande, sin desplazar ---------- */
+.waves{display:none} /* la franja de formas de onda vuelve en la etapa 3, con la onda real */
+.deck{gap:8px;padding:12px}
+.deck.live{padding:11px}
+.row8{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px}
+.row6{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px}
+.row5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px}
+/* Botón compacto: texto centrado y la tecla en una etiqueta chica en la esquina */
+.btn.mini{position:relative;justify-content:center;padding:0 4px;min-height:38px;font-size:12px}
+.btn.mini > span:first-child{text-align:center}
+.btn.mini kbd{position:absolute;top:2px;right:2px;font-size:9px;padding:1px 3px;border-radius:3px}
+.times{align-items:center}
+.times .markinfo{flex:1;text-align:center;min-height:0;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--warn)}
+.mixer{gap:10px;padding:12px}
+.mixTop{align-items:flex-end}
+.knobs{display:grid;grid-template-columns:repeat(2,auto);gap:4px 6px;align-self:center}
+.knob svg{width:28px;height:28px}
+.knob .lbl{font-size:9px;letter-spacing:.04em}
+.app{--fh:120px}
+.transRow{display:grid;grid-template-columns:auto 1fr auto auto;gap:4px}
+.transRow .btn.mini{min-width:52px}
+.btn.go{min-height:44px;font-size:14px;gap:8px}
+.onair{display:none}
+.libZone{min-height:240px}
+.lib td{padding:5px 8px}
+.lib tbody tr[draggable=true]{cursor:grab}
+.lib tbody tr.arrastrando{opacity:.5}
+.deck.soltar{box-shadow:0 0 0 3px var(--c) inset}
+.deck.soltar .drop{display:block;border-color:var(--c);color:var(--c)}
+
 /* ---------- Pantallas bajas (laptop 1536×816 con escala 125 %) ---------- */
 @media (max-height:900px){
-  .app{gap:8px;padding:8px;--fh:116px}
-  .logo{font-size:19px}
-  .modos{padding:3px} .modos button{min-height:28px}
-  .chip{padding:5px 10px}
-  .btn{min-height:32px}
-  .btn.go{min-height:40px;font-size:14px}
-  .btn.sm{min-height:28px}
-  .waves{padding:6px 10px;gap:4px} .wave{height:16px}
-  .deck{padding:10px;gap:8px} .deck.live{padding:9px}
-  .title{font-size:17px;min-height:23px} .sub{font-size:13px;min-height:17px}
-  .bpm{font-size:24px}
-  .dTags{margin-bottom:2px}
-  .bar{height:26px}
-  .times{margin-top:3px}
-  .lbl.mb6{margin-bottom:4px}
-  .mixer{padding:10px;gap:8px}
-  .knobs{gap:2px} .knob svg{width:26px;height:26px} .knob .lbl{font-size:10px}
-  .headBtn{min-height:30px}
-  #estilos{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .panel{padding:10px}
-  .vidPreview{height:56px}
-  .lib td{padding:4px 8px}
+  .app{gap:6px;padding:6px;--fh:84px}
+  .logo{font-size:18px}
+  .top{padding:0 2px}
+  .modos{padding:2px} .modos button{min-height:26px;padding:0 10px}
+  .chip{padding:4px 9px}
+  .btn{min-height:30px}
+  .btn.sm{min-height:26px}
+  .btn.mini{min-height:30px;font-size:11.5px}
+  .btn.go{min-height:34px;font-size:13px}
+  .deck{padding:8px;gap:6px} .deck.live{padding:7px}
+  .dTags{margin-bottom:1px}
+  .title{font-size:16px;min-height:21px} .sub{font-size:12px;min-height:16px}
+  .bpm{font-size:22px} .bpmRow{margin-top:3px}
+  .bar{height:24px}
+  .times{margin-top:2px}
+  .drop{padding:4px;font-size:12px}
+  .mixer{padding:8px;gap:6px}
+  .knob svg{width:22px;height:22px}
+  .headBtn{min-height:26px}
+  .lbl.mb6{margin-bottom:3px}
+  .panel{padding:8px}
+  .libPanel{gap:6px}
+  .vidPreview{height:48px}
+  .lib td{padding:3px 8px}
+  .lib th{padding:4px 8px}
   .libFoot{display:none}
   .navItem{padding:4px 10px}
   .libNav .navSep{margin-top:6px}
-  .search{min-height:30px}
+  .search{min-height:28px}
 }
 
 /* ---------- Configuración: teclas ---------- */
