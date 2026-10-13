@@ -46,6 +46,16 @@ Documento de diseño completo (funciones premium, técnicas de DJ, fuentes): htt
 
 Reutilizar su lógica de audio y teclado al migrar; no reescribir desde cero.
 
+## Estado actual: app de Electron (etapa 1 terminada)
+
+Se arranca con `npm start`. Lo que ya existe en `app/`:
+
+- **Páginas servidas con `app://mezcladora/...`** (`protocol.handle` en `app/main/main.js`), solo archivos dentro de `app/`. Las canciones de la biblioteca se sirven en `app://mezcladora/medio/<id>` con peticiones por rangos; solo se sirven rutas que están en la biblioteca. Mismo origen para todo, así Web Audio y `captureStream()` funcionan sin CORS.
+- **Mezcladora** (`app/renderer/`): el prototipo separado en `index.html`, `estilos.css` y `mezcladora.js`, con su misma lógica. CSP estricto, sin scripts en línea.
+- **Ventana de video** (`app/video/`): la abre la mezcladora con `window.open` (comparten proceso y recibe la imagen con `captureStream()`). El proceso principal la pone a pantalla completa en la pantalla donde no está la mezcladora, la oculta si no hay segunda pantalla y la mueve al conectar/desconectar. No es enfocable, no se puede cerrar y no sale en la barra de tareas.
+- **Biblioteca** (`app/main/biblioteca.js`): SQLite con `node:sqlite` (integrado, sin módulos nativos) en `datos/biblioteca.sqlite`. Esquema versionado con `PRAGMA user_version`. Escaneo asíncrono al abrir y con el botón Actualizar; lo que falta se marca como "no encontrado" sin borrarse.
+- **Protecciones:** una sola instancia, sin menú (evita Ctrl+R), aviso al cerrar con música sonando, recarga si la página se cae, sin throttling en segundo plano.
+
 ## Diseño de la interfaz (referencia obligatoria)
 
 - Archivo: `diseno/Main.dc.html` (y `diseno/pantalla-dj.png` si existe). El `.dc.html` es **solo referencia** de layout, colores y textos: no se ejecuta tal cual. Ignorar `support.js`, `<x-dc>`, `<sc-for>` y la clase `DCLogic`; construir la interfaz real en `app/renderer/`.
@@ -105,10 +115,18 @@ mezcladora-personal/
 ## Plan por etapas
 
 - [x] **Prototipo** (ver "Estado actual").
-- [ ] **1. Base de escritorio:** Electron con el prototipo migrado, ventana de video automática en la pantalla externa, biblioteca SQLite con carpeta de música.
+- [x] **1. Base de escritorio:** Electron con el prototipo migrado, ventana de video automática en la pantalla externa, biblioteca SQLite con carpeta de música.
+- [ ] **1.5. Diseño nuevo:** pasar la interfaz a `diseno/Main.dc.html` (layout, colores, tipografías locales) y las teclas nuevas, antes de agregar stems.
 - [ ] **2. Stems con IA:** preparador Python, cola de preparación, botones de stems, filtro en vivo de respaldo para canciones no preparadas.
 - [ ] **3. Análisis:** BPM, tono (Camelot), forma de onda, detección de dónde empieza la voz para sugerir la marca de inicio.
 - [ ] **4. Control fino:** 8 hot cues, loops, marca de salida, estilos de transición (mezcla larga, corte, filtro, eco de salida, loop y subida, cambio de voz), limitador en la salida principal.
 - [ ] **5. Efectos y sonidos:** eco, reverb y filtro (un efecto por transición, en frases de 8/16/32 tiempos), efectos por stem, pads de efectos de sonido.
 - [ ] **6. Temas y teatro:** lista de escena (modo show, una tecla lanza el siguiente), modo fondo musical, talkover manual, subidas/bajadas controladas, botón de pánico (Esc = fundido a silencio en 2 s).
 - [ ] **7. Extras:** grabar la mezcla, sugerencias por tono compatible, texto en pantalla, visualizaciones, medidor de espacio y resolución de cada video en la biblioteca.
+
+## Pendientes (anotados para no olvidarlos)
+
+- **Búsqueda en la biblioteca** → con el diseño nuevo (etapa 1.5). Debe respetar "teclado primero": mientras se escribe, las teclas de los decks no deben quedar bloqueadas sin salida clara (p. ej. Enter/Esc devuelven el control).
+- **Teclas para "Agregar carpeta" y "Actualizar biblioteca"** → con las teclas nuevas (etapa 1.5).
+- **Marcas de inicio en SQLite** (hoy están en `localStorage` del renderer, clave `mark:nombre|tamaño`) → en la etapa 4, junto con hot cues y marca de salida. Migrar las existentes de `localStorage` a la base.
+- **Importar marcas del prototipo** (están en el `localStorage` de Chrome, origen localhost) → al final, solo si hacen falta: exportarlas desde Chrome a un archivo e importarlo.
