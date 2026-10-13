@@ -127,6 +127,7 @@ function createDeck(id) {
   audio.addEventListener('loadeddata', () => {
     d.isVideo = audio.videoWidth > 0; // confirma si el archivo realmente trae imagen
     renderBadge(d); feedVideo(d); updateVideoOut();
+    if (d.libId != null) guardarInfoCancion(d.libId, { duracion: audio.duration, ancho: audio.videoWidth, alto: audio.videoHeight });
   });
   audio.addEventListener('error', () => { if (d.file) toast(`Deck ${id}: no se pudo leer "${d.file.name}"`); });
 }
@@ -134,16 +135,32 @@ function createDeck(id) {
 function loadFile(d, file) {
   const isMedia = /^(audio|video)\//.test(file.type) || AUDIO_EXT.test(file.name) || VIDEO_EXT.test(file.name);
   if (!isMedia) return toast('Ese archivo no parece ser audio ni video');
-  if (isOnAir(d) && !confirm(`El deck ${d.id} está sonando al aire. ¿Reemplazar la canción?`)) return;
+  cargarEnDeck(d, {
+    name: file.name, size: file.size, url: URL.createObjectURL(file), blob: true,
+    isVideo: file.type.startsWith('video/') || VIDEO_EXT.test(file.name),
+  });
+}
 
+// Carga una canción de la biblioteca (se sirve desde app://mezcladora/medio/<id>)
+function loadTrack(d, c) {
+  if (!c || c.falta) { toast('Ese archivo ya no está en su carpeta'); return false; }
+  return cargarEnDeck(d, { name: c.nombre, size: c.tamano, url: `/medio/${c.id}`, isVideo: c.tipo === 'video', libId: c.id });
+}
+
+// m = { name, size, url, isVideo, blob?, libId? }. La marca de inicio se guarda por nombre|tamaño, venga de donde venga.
+function cargarEnDeck(d, m) {
+  if (isOnAir(d) && !confirm(`El deck ${d.id} está sonando al aire. ¿Reemplazar la canción?`)) {
+    if (m.blob) URL.revokeObjectURL(m.url);
+    return false;
+  }
   d.audio.pause();
-  if (d.url) URL.revokeObjectURL(d.url);
+  if (d.url && d.urlBlob) URL.revokeObjectURL(d.url);
   const myLoad = ++d.loadId;
-  d.file = file;
+  const file = d.file = { name: m.name, size: m.size };
   d.key = `mark:${file.name}|${file.size}`;
-  d.url = URL.createObjectURL(file);
+  d.url = m.url; d.urlBlob = !!m.blob; d.libId = m.libId ?? null;
   d.mark = store.get(d.key, null);
-  d.isVideo = file.type.startsWith('video/') || VIDEO_EXT.test(file.name);
+  d.isVideo = m.isVideo;
   d.audio.src = d.url;
   d.audio.addEventListener('loadedmetadata', () => {
     if (myLoad !== d.loadId) return;
@@ -155,6 +172,7 @@ function loadFile(d, file) {
   t.textContent = file.name.replace(/\.[^.]+$/, '');
   t.title = file.name;
   renderMark(d); updatePlayBtn(d); renderBadge(d);
+  return true;
 }
 function renderBadge(d) {
   const b = $('.badge', d.el);
@@ -409,6 +427,103 @@ async function applyOutputs() {
   } catch { toast('No se pudo usar esa salida de audífonos'); }
 }
 
+// ---------- Biblioteca ----------
+const lib = { canciones: [], sel: 0, carpetas: [] };
+
+const fmtRes = c => (c.alto ? `${c.alto}p` : '');
+const esc = t => String(t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+async function cargarBiblioteca() {
+  try {
+    [lib.canciones, lib.carpetas] = await Promise.all([window.mezcladora.biblioteca.canciones(), window.mezcladora.biblioteca.carpetas()]);
+  } catch { lib.canciones = []; toast('No se pudo leer la biblioteca'); }
+  lib.sel = Math.min(lib.sel, Math.max(0, lib.canciones.length - 1));
+  renderBiblioteca();
+}
+
+async function escanearBiblioteca(avisarSiNada) {
+  const b = $('#libScan'); b.disabled = true; b.firstChild.textContent = 'Revisando… ';
+  try {
+    const r = await window.mezcladora.biblioteca.escanear();
+    if (!r) return toast('No se pudo revisar la biblioteca');
+    if (r.nuevas || r.faltan) await cargarBiblioteca();
+    const partes = [];
+    if (r.nuevas) partes.push(`${r.nuevas} nuevas`);
+    if (r.faltan) partes.push(`${r.faltan} ya no están`);
+    if (r.carpetasNoEncontradas.length) partes.push(`no encontré ${r.carpetasNoEncontradas.join(', ')}`);
+    if (partes.length) toast(`Biblioteca: ${partes.join(' · ')}`);
+    else if (avisarSiNada) toast('Biblioteca al día');
+  } catch { toast('No se pudo revisar la biblioteca'); }
+  finally { b.disabled = false; b.firstChild.textContent = 'Actualizar '; }
+}
+
+async function agregarCarpetaBiblioteca() {
+  try {
+    const ruta = await window.mezcladora.biblioteca.agregarCarpeta();
+    if (!ruta) return;
+    await cargarBiblioteca();
+    await escanearBiblioteca(true);
+    await cargarBiblioteca();
+  } catch { toast('No se pudo agregar la carpeta'); }
+}
+
+function guardarInfoCancion(id, info) {
+  window.mezcladora.biblioteca.guardarInfo(id, info).then(() => {
+    const c = lib.canciones.find(x => x.id === id);
+    if (!c) return;
+    if (isFinite(info.duracion)) c.duracion = info.duracion;
+    if (info.alto > 0) { c.ancho = info.ancho; c.alto = info.alto; }
+    renderBiblioteca();
+  }).catch(() => {});
+}
+
+function renderBiblioteca() {
+  const n = lib.canciones.length;
+  $('#libCount').textContent = n ? `${n} archivos` : '';
+  const tbody = $('#libRows');
+  if (!n) {
+    tbody.innerHTML = `<tr><td colspan="6" class="libEmpty">${lib.carpetas.length
+      ? 'No encontré canciones ni videos en tus carpetas. Presiona "Actualizar".'
+      : 'Agrega tu carpeta de música con "Agregar carpeta".'}</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = lib.canciones.map((c, i) => `
+    <tr data-i="${i}" class="${i === lib.sel ? 'sel' : ''}${c.falta ? ' falta' : ''}">
+      <td class="libName" title="${esc(c.nombre)}">${esc(c.nombre.replace(/\.[^.]+$/, ''))}${c.falta ? ' <span class="badge">NO ENCONTRADO</span>' : ''}</td>
+      <td>${c.tipo === 'video' ? 'Video' : 'Audio'}</td>
+      <td class="num">${c.duracion ? fmt(c.duracion) : ''}</td>
+      <td class="num${c.alto && c.alto < 720 ? ' lowres' : ''}">${fmtRes(c)}</td>
+      <td class="libFolder" title="${esc(c.carpeta)}">${esc(c.carpeta.split(/[\\/]/).pop())}</td>
+      <td class="libLoad"><button data-deck="A">A</button><button data-deck="B">B</button></td>
+    </tr>`).join('');
+}
+
+function moverSeleccion(delta) {
+  const n = lib.canciones.length;
+  if (!n) return;
+  $(`#libRows tr[data-i="${lib.sel}"]`)?.classList.remove('sel');
+  lib.sel = Math.max(0, Math.min(n - 1, lib.sel + delta));
+  const fila = $(`#libRows tr[data-i="${lib.sel}"]`);
+  fila?.classList.add('sel');
+  fila?.scrollIntoView({ block: 'nearest' });
+}
+
+function cargarSeleccion(id) {
+  const c = lib.canciones[lib.sel];
+  if (!c) return toast('La biblioteca está vacía');
+  if (loadTrack(decks[id], c)) toast(`Deck ${id}: ${c.nombre.replace(/\.[^.]+$/, '')}`);
+}
+
+$('#libRows').addEventListener('click', e => {
+  const fila = e.target.closest('tr[data-i]');
+  if (!fila) return;
+  moverSeleccion(Number(fila.dataset.i) - lib.sel);
+  const b = e.target.closest('button[data-deck]');
+  if (b) { initAudio(); cargarSeleccion(b.dataset.deck); }
+});
+$('#libScan').addEventListener('click', () => escanearBiblioteca(true));
+$('#libAdd').addEventListener('click', agregarCarpetaBiblioteca);
+
 // ---------- Teclado ----------
 const keyMap = {};
 for (const [id, k] of Object.entries(KEYS))
@@ -432,6 +547,9 @@ document.addEventListener('keydown', e => {
     case 'ArrowRight': e.preventDefault(); setXf(state.xf + (e.shiftKey ? 0.2 : 0.05), true); break;
     case 'KeyT': e.preventDefault(); if (!e.repeat) cycleFade(); break;
     case 'KeyV': e.preventDefault(); if (!e.repeat) toggleBlackout(); break;
+    case 'ArrowUp': e.preventDefault(); moverSeleccion(-1); break;
+    case 'ArrowDown': e.preventDefault(); moverSeleccion(1); break;
+    case 'Enter': case 'NumpadEnter': e.preventDefault(); if (!e.repeat) cargarSeleccion(e.shiftKey ? 'B' : 'A'); break;
   }
 });
 
@@ -480,6 +598,8 @@ function render() {
 updateOnAir();
 detectDevices(false);
 abrirVentanaVideo();
+// La biblioteca se muestra de inmediato y luego se revisan las carpetas en segundo plano
+cargarBiblioteca().then(() => escanearBiblioteca(false));
 window.mezcladora.video.alCambiar(e => mostrarEstadoVideo(e, true));
 window.mezcladora.video.estado().then(e => mostrarEstadoVideo(e, false)).catch(() => mostrarEstadoVideo(null, false));
 render();

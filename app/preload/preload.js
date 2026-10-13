@@ -9,6 +9,16 @@ contextBridge.exposeInMainWorld('mezcladora', {
     electron: process.versions.electron,
     chrome: process.versions.chrome,
   },
+  biblioteca: {
+    canciones: () => ipcRenderer.invoke('biblioteca:canciones'),
+    carpetas: () => ipcRenderer.invoke('biblioteca:carpetas'),
+    // Revisa las carpetas y agrega lo nuevo → { nuevas, faltan, carpetasNoEncontradas } o null si falló
+    escanear: () => ipcRenderer.invoke('biblioteca:escanear'),
+    // Abre el selector de carpetas → ruta agregada o null si se canceló
+    agregarCarpeta: () => ipcRenderer.invoke('biblioteca:agregarCarpeta'),
+    // Guarda duración y resolución que se conocen al cargar la canción en un deck
+    guardarInfo: (id, info) => ipcRenderer.invoke('biblioteca:guardarInfo', id, info),
+  },
   video: {
     // { conectada, nombre, ancho, alto } de la pantalla externa
     estado: () => ipcRenderer.invoke('video:estado'),

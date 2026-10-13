@@ -45,6 +45,20 @@
 </main>
 
 <section class="panel">
+  <div class="libHead">
+    <h2>BIBLIOTECA <span id="libCount" class="libCount"></span></h2>
+    <div class="libKeys"><kbd>↑ ↓</kbd> elegir · <kbd>Enter</kbd> cargar en A · <kbd>Shift+Enter</kbd> cargar en B</div>
+    <div class="libBtns"><button id="libAdd">Agregar carpeta</button><button id="libScan">Actualizar </button></div>
+  </div>
+  <div class="libWrap">
+    <table class="lib">
+      <thead><tr><th>Nombre</th><th>Tipo</th><th class="num">Duración</th><th class="num">Resolución</th><th>Carpeta</th><th></th></tr></thead>
+      <tbody id="libRows"><tr><td colspan="6" class="libEmpty">Cargando biblioteca…</td></tr></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
   <h2>SALIDAS DE AUDIO</h2>
   <div class="outs">
     <label>Bocinas / Bluetooth (lo que oyen todos)<select id="outMaster"></select></label>

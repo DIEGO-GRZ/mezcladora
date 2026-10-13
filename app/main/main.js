@@ -2,7 +2,10 @@
 // Proceso principal de la Mezcladora Personal: crea las ventanas y aplica las protecciones en vivo.
 const { app, BrowserWindow, Menu, dialog, session, shell, protocol, net, screen, ipcMain } = require('electron');
 const path = require('node:path');
+const fs = require('node:fs');
+const { Readable } = require('node:stream');
 const { pathToFileURL } = require('node:url');
+const biblioteca = require('./biblioteca');
 
 const DEV = !app.isPackaged;
 const APP_DIR = path.resolve(__dirname, '..');
@@ -10,6 +13,13 @@ const APP_DIR = path.resolve(__dirname, '..');
 // compartan origen (la mezcladora le pasa la imagen de los decks directamente)
 const ORIGEN = 'app://mezcladora';
 const URL_VIDEO = `${ORIGEN}/video/index.html`;
+// Datos locales (biblioteca, stems): en desarrollo la carpeta datos/ del proyecto; instalada, la del usuario
+const CARPETA_DATOS = DEV ? path.resolve(APP_DIR, '..', 'datos') : path.join(app.getPath('userData'), 'datos');
+const TIPOS_MEDIO = {
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.oga': 'audio/ogg', '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac', '.flac': 'audio/flac', '.opus': 'audio/ogg', '.mp4': 'video/mp4', '.m4v': 'video/mp4',
+  '.webm': 'video/webm', '.mov': 'video/quicktime', '.mkv': 'video/x-matroska', '.ogv': 'video/ogg',
+};
 
 let win = null;       // mezcladora
 let videoWin = null;  // salida de video (segunda pantalla)
@@ -41,11 +51,23 @@ function arrancar() {
   session.defaultSession.setPermissionRequestHandler((_wc, permiso, cb) => cb(PERMITIDOS.has(permiso)));
   session.defaultSession.setPermissionCheckHandler((_wc, permiso) => PERMITIDOS.has(permiso));
 
+  try {
+    biblioteca.abrir(CARPETA_DATOS);
+  } catch (err) {
+    dialog.showErrorBox('Mezcladora Personal', `No se pudo abrir la biblioteca:
+${err.message}
+
+La mezcladora funciona igual cargando canciones por arrastre.`);
+  }
+
   // app://mezcladora/<ruta> → archivos dentro de app/, nunca fuera
+  // app://mezcladora/medio/<id> → canción de la biblioteca (mismo origen: el audio pasa por Web Audio sin bloqueos)
   protocol.handle('app', async req => {
     try {
       const u = new URL(req.url);
       if (u.host !== 'mezcladora') return new Response('No encontrado', { status: 404 });
+      const medio = /^\/medio\/(\d+)$/.exec(u.pathname);
+      if (medio) return await servirMedio(medio[1], req);
       const archivo = path.resolve(APP_DIR, '.' + decodeURIComponent(u.pathname));
       if (!archivo.startsWith(APP_DIR + path.sep)) return new Response('Prohibido', { status: 403 });
       return await net.fetch(pathToFileURL(archivo).toString());
@@ -53,6 +75,16 @@ function arrancar() {
       return new Response('No encontrado', { status: 404 });
     }
   });
+
+  ipcMain.handle('biblioteca:canciones', () => conBiblioteca(() => biblioteca.canciones(), []));
+  ipcMain.handle('biblioteca:carpetas', () => conBiblioteca(() => biblioteca.carpetas(), []));
+  ipcMain.handle('biblioteca:escanear', () => conBiblioteca(() => biblioteca.escanear(), null));
+  ipcMain.handle('biblioteca:agregarCarpeta', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Agregar carpeta de música', properties: ['openDirectory'] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    return conBiblioteca(() => biblioteca.agregarCarpeta(r.filePaths[0]), null);
+  });
+  ipcMain.handle('biblioteca:guardarInfo', (_e, id, info) => conBiblioteca(() => biblioteca.guardarInfo(id, info || {}), null));
 
   ipcMain.handle('video:estado', () => estadoVideo);
   ipcMain.handle('video:recolocar', () => { colocarVideo(true); return estadoVideo; });
@@ -217,4 +249,46 @@ function colocarVideo(forzar = false) {
   }
 }
 
+// ---------- Biblioteca ----------
+
+// Si la base falla, la mezcladora sigue funcionando (por arrastre); nunca tirar la app por la biblioteca
+async function conBiblioteca(fn, siFalla) {
+  try { return await fn(); }
+  catch (err) { console.error('Biblioteca:', err); return siFalla; }
+}
+
+// Sirve un archivo de la biblioteca con soporte de rangos (para poder adelantar en videos largos)
+async function servirMedio(id, req) {
+  const ruta = biblioteca.rutaDe(id);
+  if (!ruta) return new Response('No encontrado', { status: 404 });
+  let st;
+  try { st = await fs.promises.stat(ruta); } catch { return new Response('No encontrado', { status: 404 }); }
+  const tipo = TIPOS_MEDIO[path.extname(ruta).toLowerCase()] || 'application/octet-stream';
+  const total = st.size;
+  const rango = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get('range') || '');
+
+  if (!rango) {
+    return new Response(Readable.toWeb(fs.createReadStream(ruta)), {
+      status: 200,
+      headers: { 'Content-Type': tipo, 'Content-Length': String(total), 'Accept-Ranges': 'bytes' },
+    });
+  }
+  let inicio, fin;
+  if (rango[1] === '') { inicio = Math.max(0, total - Number(rango[2])); fin = total - 1; } // bytes=-N (últimos N)
+  else { inicio = Number(rango[1]); fin = rango[2] === '' ? total - 1 : Math.min(Number(rango[2]), total - 1); }
+  if (!(inicio <= fin) || inicio >= total) {
+    return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${total}` } });
+  }
+  return new Response(Readable.toWeb(fs.createReadStream(ruta, { start: inicio, end: fin })), {
+    status: 206,
+    headers: {
+      'Content-Type': tipo,
+      'Content-Length': String(fin - inicio + 1),
+      'Content-Range': `bytes ${inicio}-${fin}/${total}`,
+      'Accept-Ranges': 'bytes',
+    },
+  });
+}
+
 app.on('window-all-closed', () => app.quit());
+app.on('will-quit', () => biblioteca.cerrar());

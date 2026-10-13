@@ -50,3 +50,28 @@ select{background:#0a0c10;color:var(--text);border:1px solid var(--line);border-
 .vidbtns button{--c:var(--warn)}
 #mediaPool{position:fixed;left:0;top:0;width:2px;height:2px;overflow:hidden;opacity:0;pointer-events:none}
 @media (max-width:900px){main{grid-template-columns:1fr}.outs{grid-template-columns:1fr}}
+/* Biblioteca */
+.libHead{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+.libHead h2{margin:0}
+.libCount{color:var(--muted);font-weight:400;letter-spacing:0;margin-left:6px}
+.libKeys{color:var(--muted);font-size:12px;flex:1}
+.libBtns{display:flex;gap:6px}
+.libBtns button{padding:6px 10px}
+.libBtns button:disabled{opacity:.6;cursor:default}
+.libWrap{max-height:42vh;overflow:auto;border:1px solid var(--line);border-radius:8px}
+table.lib{width:100%;border-collapse:collapse;font-size:13px}
+.lib th{position:sticky;top:0;background:var(--panel);color:var(--muted);font-weight:500;text-align:left;padding:6px 10px;border-bottom:1px solid var(--line);z-index:1}
+.lib td{padding:5px 10px;border-bottom:1px solid #1f232b;white-space:nowrap}
+.lib .num{text-align:right;font-variant-numeric:tabular-nums}
+.lib td.libName{max-width:0;width:60%;overflow:hidden;text-overflow:ellipsis}
+.lib td.libFolder{color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.lib tbody tr{cursor:pointer}
+.lib tbody tr:hover{background:#1c2027}
+.lib tbody tr.sel{background:#232a36;box-shadow:inset 3px 0 0 var(--ok)}
+.lib tr.falta td{color:var(--muted);text-decoration:line-through}
+.lib tr.falta .badge{text-decoration:none}
+.lib .lowres{color:var(--warn)}
+.lib td.libLoad{text-align:right}
+.libLoad button{display:inline-block;padding:2px 9px;margin-left:4px;font-size:12px}
+.libLoad button[data-deck=A]{--c:var(--a)} .libLoad button[data-deck=B]{--c:var(--b)}
+.libEmpty{color:var(--muted);text-align:center;padding:18px!important}
