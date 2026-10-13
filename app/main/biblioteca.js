@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
+const { separar } = require('./nombres');
 
 const AUDIO = new Set(['.mp3', '.wav', '.ogg', '.oga', '.m4a', '.aac', '.flac', '.opus']);
 const VIDEO = new Set(['.mp4', '.m4v', '.webm', '.mov', '.mkv', '.ogv']);
@@ -11,10 +12,19 @@ let db = null;
 
 function abrir(carpetaDatos) {
   fs.mkdirSync(carpetaDatos, { recursive: true });
-  db = new DatabaseSync(path.join(carpetaDatos, 'biblioteca.sqlite'));
+  const archivo = path.join(carpetaDatos, 'biblioteca.sqlite');
+  db = new DatabaseSync(archivo);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
+  // Antes de cambiar el esquema de una base que ya tiene datos, se guarda una copia
+  const version = db.prepare('PRAGMA user_version').get().user_version;
+  if (version > 0 && version < VERSION) {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    fs.copyFileSync(archivo, path.join(carpetaDatos, `biblioteca.antes-v${VERSION}.sqlite`));
+  }
   migrar();
 }
+
+const VERSION = 2; // versión actual del esquema
 
 // Cada versión del esquema es un paso; así las bases viejas se actualizan sin perder datos
 function migrar() {
@@ -43,6 +53,26 @@ function migrar() {
       PRAGMA user_version = 1;
     `);
   }
+  if (version < 2) {
+    // Título y artista separados del nombre del archivo; nombre_manual = 1 si el usuario los corrigió
+    db.exec('BEGIN');
+    try {
+      db.exec(`
+        ALTER TABLE canciones ADD COLUMN titulo TEXT;
+        ALTER TABLE canciones ADD COLUMN artista TEXT;
+        ALTER TABLE canciones ADD COLUMN nombre_manual INTEGER NOT NULL DEFAULT 0;
+      `);
+      const poner = db.prepare('UPDATE canciones SET titulo = ?, artista = ?, alto = COALESCE(alto, ?) WHERE id = ?');
+      for (const f of db.prepare('SELECT id, nombre FROM canciones').all()) {
+        const n = separar(f.nombre);
+        poner.run(n.titulo, n.artista, n.alto, f.id);
+      }
+      db.exec('PRAGMA user_version = 2; COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+  }
 }
 
 function carpetas() {
@@ -57,9 +87,10 @@ function agregarCarpeta(ruta) {
 
 function canciones() {
   return db.prepare(`
-    SELECT c.id, c.nombre, c.tipo, c.tamano, c.duracion, c.ancho, c.alto, c.falta, k.ruta AS carpeta
+    SELECT c.id, c.nombre, c.titulo, c.artista, c.nombre_manual, c.tipo, c.tamano, c.duracion, c.ancho, c.alto, c.falta,
+           c.carpeta_id, k.ruta AS carpeta
     FROM canciones c JOIN carpetas k ON k.id = c.carpeta_id
-    ORDER BY c.falta, c.nombre COLLATE NOCASE
+    ORDER BY c.falta, COALESCE(NULLIF(c.artista, ''), c.titulo) COLLATE NOCASE, c.titulo COLLATE NOCASE
   `).all();
 }
 
@@ -67,6 +98,21 @@ function canciones() {
 function rutaDe(id) {
   const fila = db.prepare('SELECT ruta FROM canciones WHERE id = ? AND falta = 0').get(Number(id));
   return fila ? fila.ruta : null;
+}
+
+// Corrección a mano de título y artista (no toca el archivo). Sin datos = volver a lo automático.
+function editarNombre(id, datos) {
+  const fila = db.prepare('SELECT nombre FROM canciones WHERE id = ?').get(Number(id));
+  if (!fila) return null;
+  const t = String(datos?.titulo ?? '').trim().slice(0, 300);
+  const a = String(datos?.artista ?? '').trim().slice(0, 300);
+  if (!t) {
+    const n = separar(fila.nombre);
+    db.prepare('UPDATE canciones SET titulo = ?, artista = ?, nombre_manual = 0 WHERE id = ?').run(n.titulo, n.artista, Number(id));
+    return { titulo: n.titulo, artista: n.artista, nombre_manual: 0 };
+  }
+  db.prepare('UPDATE canciones SET titulo = ?, artista = ?, nombre_manual = 1 WHERE id = ?').run(t, a, Number(id));
+  return { titulo: t, artista: a, nombre_manual: 1 };
 }
 
 function guardarInfo(id, { duracion, ancho, alto }) {
@@ -102,9 +148,10 @@ async function escanear() {
     }
 
     const existentes = new Set(db.prepare('SELECT ruta FROM canciones WHERE carpeta_id = ?').all(carpeta.id).map(f => f.ruta));
+    // Al actualizar una canción que ya estaba no se tocan título/artista (pueden estar corregidos a mano)
     const insertar = db.prepare(`
-      INSERT INTO canciones (carpeta_id, ruta, nombre, tipo, tamano, modificado, agregada)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO canciones (carpeta_id, ruta, nombre, tipo, tamano, modificado, agregada, titulo, artista, alto)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(ruta) DO UPDATE SET
         tamano = excluded.tamano, modificado = excluded.modificado, tipo = excluded.tipo, falta = 0
     `);
@@ -115,7 +162,8 @@ async function escanear() {
       const vistos = new Set();
       for (const e of encontrados) {
         if (!existentes.has(e.ruta)) resumen.nuevas++;
-        insertar.run(carpeta.id, e.ruta, e.nombre, e.tipo, e.tamano, e.modificado, Date.now());
+        const n = separar(e.nombre);
+        insertar.run(carpeta.id, e.ruta, e.nombre, e.tipo, e.tamano, e.modificado, Date.now(), n.titulo, n.artista, n.alto);
         vistos.add(e.ruta);
       }
       for (const r of existentes) if (!vistos.has(r)) resumen.faltan += Number(marcarFalta.run(carpeta.id, r).changes);
@@ -133,4 +181,4 @@ function cerrar() {
   db = null;
 }
 
-module.exports = { abrir, carpetas, agregarCarpeta, canciones, rutaDe, guardarInfo, escanear, cerrar };
+module.exports = { abrir, carpetas, agregarCarpeta, canciones, rutaDe, guardarInfo, editarNombre, escanear, cerrar };

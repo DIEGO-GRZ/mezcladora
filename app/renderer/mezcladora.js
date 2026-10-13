@@ -192,7 +192,7 @@ function loadFile(d, file) {
 function loadTrack(d, c) {
   if (!c || c.falta) { toast('Ese archivo ya no está en su carpeta'); return false; }
   return cargarEnDeck(d, { name: c.nombre, size: c.tamano, url: `/medio/${c.id}`, isVideo: c.tipo === 'video', libId: c.id,
-    carpeta: c.carpeta.split(/[\\/]/).pop() });
+    titulo: c.titulo, artista: c.artista });
 }
 
 // m = { name, size, url, isVideo, blob?, libId? }. La marca de inicio se guarda por nombre|tamaño, venga de donde venga.
@@ -217,9 +217,9 @@ function cargarEnDeck(d, m) {
   }, { once: true });
 
   const t = $('.title', d.el);
-  t.textContent = file.name.replace(/\.[^.]+$/, '');
+  t.textContent = m.titulo || file.name.replace(/\.[^.]+$/, '');
   t.title = file.name;
-  $('.sub', d.el).textContent = m.carpeta || '';
+  $('.sub', d.el).textContent = m.artista || '';
   d.el.classList.add('loaded');
   renderMark(d); updatePlayBtn(d); renderBadge(d); renderDeckState(d);
   return true;
@@ -524,16 +524,47 @@ async function applyOutputs() {
 }
 
 // ---------- Biblioteca ----------
-const lib = { canciones: [], sel: 0, carpetas: [] };
+// lib.vista = lo que se ve con la categoría y la búsqueda actuales; lib.sel es un índice dentro de la vista
+const lib = { canciones: [], carpetas: [], vista: [], sel: 0, cat: store.get('cfg:libCat', 'todo'), q: '' };
 
-const fmtRes = c => (c.alto ? `${c.alto}p` : '');
-const esc = t => String(t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+// Categorías del diseño; las que aún no existen se ven desactivadas
+const CATEGORIAS = [
+  { id: 'todo', nombre: 'Todo', filtro: () => true },
+  { id: 'video', nombre: 'Videos', filtro: c => c.tipo === 'video' },
+  { id: 'audio', nombre: 'Música', filtro: c => c.tipo === 'audio' },
+  { id: 'stems', nombre: 'Con stems', pend: 2 },
+  { id: 'listas', nombre: 'Mis listas', pend: 7 },
+  { id: 'escena', nombre: 'Lista de escena', pend: 6 },
+  { id: 'efectos', nombre: 'Efectos de sonido', pend: 5 },
+];
+
+const esc = t => String(t ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+// Para buscar sin importar acentos ni mayúsculas
+const plano = t => String(t ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const tituloDe = c => c.titulo || c.nombre.replace(/\.[^.]+$/, '');
+const carpetaCorta = ruta => String(ruta).split(/[\\/]/).pop();
 
 async function cargarBiblioteca() {
   try {
     [lib.canciones, lib.carpetas] = await Promise.all([window.mezcladora.biblioteca.canciones(), window.mezcladora.biblioteca.carpetas()]);
   } catch { lib.canciones = []; toast('No se pudo leer la biblioteca'); }
-  lib.sel = Math.min(lib.sel, Math.max(0, lib.canciones.length - 1));
+  for (const c of lib.canciones) c._busca = plano(`${c.titulo} ${c.artista} ${c.nombre}`);
+  filtrarBiblioteca();
+}
+
+function filtroActual() {
+  if (lib.cat.startsWith('carpeta:')) { const id = Number(lib.cat.slice(8)); return c => c.carpeta_id === id; }
+  return (CATEGORIAS.find(k => k.id === lib.cat && k.filtro) || CATEGORIAS[0]).filtro;
+}
+
+// Recalcula la vista conservando la canción seleccionada si sigue visible
+function filtrarBiblioteca() {
+  const antes = lib.vista[lib.sel]?.id;
+  const palabras = plano(lib.q).split(/\s+/).filter(Boolean);
+  const f = filtroActual();
+  lib.vista = lib.canciones.filter(c => f(c) && palabras.every(p => c._busca.includes(p)));
+  const i = lib.vista.findIndex(c => c.id === antes);
+  lib.sel = i >= 0 ? i : 0;
   renderBiblioteca();
 }
 
@@ -573,29 +604,49 @@ function guardarInfoCancion(id, info) {
   }).catch(() => {});
 }
 
+function renderNav() {
+  const cuenta = f => lib.canciones.filter(f).length;
+  $('#libCats').innerHTML = CATEGORIAS.map(k => k.pend
+    ? `<button class="navItem" disabled title="Llega en la etapa ${k.pend}"><span class="nm">${k.nombre}</span></button>`
+    : `<button class="navItem${lib.cat === k.id ? ' on' : ''}" data-cat="${k.id}"><span class="nm">${k.nombre}</span><span class="n">${cuenta(k.filtro)}</span></button>`).join('');
+  $('#libFolders').innerHTML = lib.carpetas.map(k => `<button class="navItem${lib.cat === `carpeta:${k.id}` ? ' on' : ''}" data-cat="carpeta:${k.id}" title="${esc(k.ruta)}">
+      <span class="nm">${esc(carpetaCorta(k.ruta))}</span><span class="n">${cuenta(c => c.carpeta_id === k.id)}</span></button>`).join('')
+    || '<div class="muted small">Sin carpetas</div>';
+}
+
 function renderBiblioteca() {
-  const n = lib.canciones.length;
-  $('#libCount').textContent = n ? `${n} archivos` : '';
+  renderNav();
+  const total = lib.canciones.length, n = lib.vista.length;
+  $('#libCount').textContent = !total ? '' : n === total ? `${total} archivos` : `${n} de ${total}`;
   const tbody = $('#libRows');
   if (!n) {
-    tbody.innerHTML = `<tr><td colspan="6" class="libEmpty">${lib.carpetas.length
-      ? 'No encontré canciones ni videos en tus carpetas. Presiona "Actualizar".'
-      : 'Agrega tu carpeta de música con "Agregar carpeta".'}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="libEmpty">${
+      !lib.carpetas.length ? 'Agrega tu carpeta de música con "+ Carpeta".'
+      : !total ? 'No encontré canciones ni videos en tus carpetas. Presiona "Actualizar".'
+      : lib.q ? `Nada coincide con "${esc(lib.q)}".` : 'No hay nada en esta categoría.'}</td></tr>`;
     return;
   }
-  tbody.innerHTML = lib.canciones.map((c, i) => `
-    <tr data-i="${i}" class="${i === lib.sel ? 'sel' : ''}${c.falta ? ' falta' : ''}">
-      <td class="libName" title="${esc(c.nombre)}">${esc(c.nombre.replace(/\.[^.]+$/, ''))}${c.falta ? ' <span class="tag">NO ENCONTRADO</span>' : ''}</td>
-      <td>${c.tipo === 'video' ? 'Video' : 'Audio'}</td>
+  const enDeck = id => ['A', 'B'].filter(k => decks[k]?.libId === id).join('');
+  tbody.innerHTML = lib.vista.map((c, i) => {
+    const dk = enDeck(c.id);
+    const video = c.tipo !== 'video' ? '<td class="tSm na">audio</td>'
+      : `<td class="tSm${c.alto && c.alto < 720 ? ' lowres' : ''}">${c.alto ? `${c.alto}p` : 'video'}</td>`;
+    return `<tr data-i="${i}" class="${i === lib.sel ? 'sel' : ''}${c.falta ? ' falta' : ''}${dk ? ' enDeck' : ''}">
+      <td class="cDeck ${dk.slice(0, 1)}">${dk}</td>
+      <td class="tTit" title="${esc(c.nombre)}">${esc(tituloDe(c))}${c.nombre_manual ? '<span class="manual" title="Corregido a mano">✎</span>' : ''}${c.falta ? ' <span class="tag">NO ENCONTRADO</span>' : ''}</td>
+      <td class="tArt">${esc(c.artista)}</td>
       <td class="num">${c.duracion ? fmt(c.duracion) : ''}</td>
-      <td class="num${c.alto && c.alto < 720 ? ' lowres' : ''}">${fmtRes(c)}</td>
-      <td class="libFolder" title="${esc(c.carpeta)}">${esc(c.carpeta.split(/[\\/]/).pop())}</td>
-      <td class="libLoad"><button data-deck="A">A</button><button data-deck="B">B</button></td>
-    </tr>`).join('');
+      <td class="num na">—</td>
+      <td class="tSm na">—</td>
+      ${video}
+      <td class="tSm na">—</td>
+      <td class="libLoad"><button class="edit" data-edit title="Corregir título y artista">✎</button><button data-deck="A">A</button><button data-deck="B">B</button></td>
+    </tr>`;
+  }).join('');
 }
 
 function moverSeleccion(delta) {
-  const n = lib.canciones.length;
+  const n = lib.vista.length;
   if (!n) return;
   $(`#libRows tr[data-i="${lib.sel}"]`)?.classList.remove('sel');
   lib.sel = Math.max(0, Math.min(n - 1, lib.sel + delta));
@@ -609,17 +660,88 @@ function moverSeleccion(delta) {
 }
 
 function cargarSeleccion(id) {
-  const c = lib.canciones[lib.sel];
-  if (!c) return toast('La biblioteca está vacía');
-  if (loadTrack(decks[id], c)) toast(`Deck ${id}: ${c.nombre.replace(/\.[^.]+$/, '')}`);
+  const c = lib.vista[lib.sel];
+  if (!c) return toast(lib.canciones.length ? 'No hay ninguna canción seleccionada' : 'La biblioteca está vacía');
+  if (loadTrack(decks[id], c)) { toast(`Deck ${id}: ${tituloDe(c)}`); renderBiblioteca(); }
 }
+
+// --- Búsqueda (solo con el mouse: clic en la caja para escribir, clic fuera para volver) ---
+const buscador = $('#libSearch');
+function modoBusqueda(on) {
+  $('#searchHint').hidden = !on;
+  $('#libKeys').hidden = on;
+}
+buscador.addEventListener('focus', () => modoBusqueda(true));
+buscador.addEventListener('blur', () => modoBusqueda(false));
+buscador.addEventListener('input', () => { lib.q = buscador.value; filtrarBiblioteca(); $('.libWrap').scrollTop = 0; });
+buscador.addEventListener('keydown', e => {
+  if (e.code === 'ArrowUp' || e.code === 'ArrowDown') { e.preventDefault(); moverSeleccion(e.code === 'ArrowUp' ? -1 : 1); }
+  else if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+    e.preventDefault();
+    initAudio();
+    cargarSeleccion(e.shiftKey ? 'B' : 'A');
+    buscador.blur(); // cargar devuelve el teclado a la mezcladora
+  }
+});
+
+// --- Corregir título y artista ---
+let editando = null;
+function abrirEditarNombre(c) {
+  editando = c;
+  $('#nameFile').textContent = `Archivo: ${c.nombre}`;
+  $('#nameTitulo').value = tituloDe(c);
+  $('#nameArtista').value = c.artista || '';
+  $('#nameAuto').disabled = !c.nombre_manual;
+  $('#nameDlg').hidden = false;
+  $('#nameTitulo').focus();
+  $('#nameTitulo').select();
+}
+function cerrarEditarNombre() {
+  editando = null;
+  $('#nameDlg').hidden = true;
+  document.activeElement?.blur?.();
+}
+async function guardarNombre(auto) {
+  const c = editando;
+  if (!c) return;
+  const titulo = $('#nameTitulo').value.trim(), artista = $('#nameArtista').value.trim();
+  if (!auto && !titulo) { toast('El título no puede quedar vacío'); $('#nameTitulo').focus(); return; }
+  try {
+    const r = await window.mezcladora.biblioteca.editarNombre(c.id, auto ? {} : { titulo, artista });
+    if (!r) throw new Error();
+    Object.assign(c, r);
+    c._busca = plano(`${c.titulo} ${c.artista} ${c.nombre}`);
+    // Si está cargada en un deck, actualizar su encabezado
+    for (const d of Object.values(decks)) if (d.libId === c.id) { $('.title', d.el).textContent = c.titulo; $('.sub', d.el).textContent = c.artista; }
+    cerrarEditarNombre();
+    filtrarBiblioteca();
+    toast(auto ? 'Nombre automático restaurado' : 'Nombre corregido');
+  } catch { toast('No se pudo guardar el nombre'); }
+}
+$('#nameOk').addEventListener('click', () => guardarNombre(false));
+$('#nameAuto').addEventListener('click', () => guardarNombre(true));
+$('#nameCancel').addEventListener('click', cerrarEditarNombre);
+$('#nameDlg').addEventListener('mousedown', e => { if (e.target.id === 'nameDlg') cerrarEditarNombre(); });
+['#nameTitulo', '#nameArtista'].forEach(s => $(s).addEventListener('keydown', e => {
+  if (e.code === 'Enter' || e.code === 'NumpadEnter') { e.preventDefault(); guardarNombre(false); }
+}));
 
 $('#libRows').addEventListener('click', e => {
   const fila = e.target.closest('tr[data-i]');
   if (!fila) return;
   moverSeleccion(Number(fila.dataset.i) - lib.sel);
+  const c = lib.vista[lib.sel];
+  if (e.target.closest('[data-edit]')) return abrirEditarNombre(c);
   const b = e.target.closest('button[data-deck]');
   if (b) { initAudio(); cargarSeleccion(b.dataset.deck); }
+});
+$('.libNav').addEventListener('click', e => {
+  const b = e.target.closest('[data-cat]');
+  if (!b) return;
+  lib.cat = b.dataset.cat;
+  store.set('cfg:libCat', lib.cat);
+  filtrarBiblioteca();
+  $('.libWrap').scrollTop = 0;
 });
 $('#libScan').addEventListener('click', () => escanearBiblioteca(true));
 $('#libAdd').addEventListener('click', agregarCarpetaBiblioteca);
@@ -710,7 +832,12 @@ $('#blackBtn').addEventListener('click', toggleBlackout);
 navigator.mediaDevices?.addEventListener?.('devicechange', () => detectDevices(false, true));
 
 // Que el foco nunca se quede en botones/controles (si no, Espacio los "presionaría")
-document.addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); });
+document.addEventListener('mousedown', e => {
+  // Clic fuera de una caja de texto la suelta (si no, seguiría recibiendo las teclas de la mezcladora)
+  const ae = document.activeElement;
+  if (ae?.matches?.('input[type=search], input[type=text]') && !ae.contains(e.target) && !e.target.closest('.modalBox')) ae.blur();
+  if (e.target.closest('button')) e.preventDefault();
+});
 document.addEventListener('change', e => { if (e.target.matches('input[type=range],input[type=checkbox],select')) e.target.blur(); });
 document.addEventListener('pointerdown', () => initAudio());
 

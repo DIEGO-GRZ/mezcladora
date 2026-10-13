@@ -90,18 +90,31 @@
 </main>
 
 <section class="libZone" aria-label="Biblioteca">
+  <nav class="panel libNav" aria-label="Categorías y carpetas">
+    <div class="lbl">Biblioteca</div>
+    <div id="libCats"></div>
+    <div class="lbl navSep">Carpetas</div>
+    <div id="libFolders"></div>
+    <div class="navBtns"><button class="btn sm" id="libAdd">+ Carpeta</button><button class="btn sm" id="libScan">Actualizar </button></div>
+  </nav>
+
   <div class="panel libPanel">
     <div class="libHead">
-      <span class="lbl">Biblioteca <span id="libCount" class="libCount"></span></span>
-      <div class="libKeys"><kbd data-tecla="libUp"></kbd><kbd data-tecla="libDown"></kbd> elegir · <kbd data-tecla="loadA"></kbd> a deck A · <kbd data-tecla="loadB"></kbd> a deck B</div>
-      <div class="libBtns"><button class="btn sm" id="libAdd">Agregar carpeta</button><button class="btn sm" id="libScan">Actualizar </button></div>
+      <label class="search" title="Clic para buscar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        <input type="search" id="libSearch" placeholder="Buscar canción o artista" autocomplete="off" spellcheck="false" aria-label="Buscar en la biblioteca">
+      </label>
+      <div class="libKeys" id="libKeys"><kbd data-tecla="libUp"></kbd><kbd data-tecla="libDown"></kbd> elegir · <kbd data-tecla="loadA"></kbd> a deck A · <kbd data-tecla="loadB"></kbd> a deck B</div>
+      <div class="searchHint" id="searchHint" hidden>Escribiendo: las teclas de la mezcladora están en pausa. <kbd>Enter</kbd> carga en A, <kbd>⇧Enter</kbd> en B. Clic fuera para volver.</div>
+      <span id="libCount" class="libCount"></span>
     </div>
     <div class="libWrap">
       <table class="lib">
-        <thead><tr><th>Nombre</th><th>Tipo</th><th class="num">Duración</th><th class="num">Resolución</th><th>Carpeta</th><th></th></tr></thead>
-        <tbody id="libRows"><tr><td colspan="6" class="libEmpty">Cargando biblioteca…</td></tr></tbody>
+        <thead><tr><th class="cDeck"></th><th>Título</th><th>Artista</th><th class="num">Duración</th><th class="num">BPM</th><th>Tono</th><th>Video</th><th>Stems</th><th></th></tr></thead>
+        <tbody id="libRows"><tr><td colspan="9" class="libEmpty">Cargando biblioteca…</td></tr></tbody>
       </table>
     </div>
+    <div class="libFoot">Resolución en amarillo = se verá borroso en el proyector · <b>✎</b> corrige título y artista · BPM, tono y stems llegan en las etapas 2 y 3</div>
   </div>
 
   <aside class="libAside">
@@ -152,6 +165,23 @@
     </div>
     <div class="lbl tecH">Generales</div>
     <div id="tecG" class="tecCols"></div>
+  </div>
+</div>
+
+<!-- Corregir título y artista (no renombra el archivo) -->
+<div class="modal" id="nameDlg" hidden>
+  <div class="modalBox nameBox" role="dialog" aria-label="Corregir título y artista">
+    <div class="modalTitle">Corregir nombre</div>
+    <p class="muted small" id="nameFile"></p>
+    <label class="field">Título<input type="text" id="nameTitulo" maxlength="300" autocomplete="off" spellcheck="false"></label>
+    <label class="field">Artista<input type="text" id="nameArtista" maxlength="300" autocomplete="off" spellcheck="false"></label>
+    <div class="nameBtns">
+      <button class="btn sm" id="nameAuto" title="Volver a separarlo del nombre del archivo">Volver al automático</button>
+      <span></span>
+      <button class="btn sm" id="nameCancel">Cancelar</button>
+      <button class="btn sm on" id="nameOk">Guardar <kbd>Enter</kbd></button>
+    </div>
+    <p class="muted small">El archivo no se renombra. <kbd>Esc</kbd> sigue siendo Pánico: para salir usa Cancelar.</p>
   </div>
 </div>
 

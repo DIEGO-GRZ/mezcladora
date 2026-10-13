@@ -85,6 +85,7 @@ La mezcladora funciona igual cargando canciones por arrastre.`);
     return conBiblioteca(() => biblioteca.agregarCarpeta(r.filePaths[0]), null);
   });
   ipcMain.handle('biblioteca:guardarInfo', (_e, id, info) => conBiblioteca(() => biblioteca.guardarInfo(id, info || {}), null));
+  ipcMain.handle('biblioteca:editarNombre', (_e, id, datos) => conBiblioteca(() => biblioteca.editarNombre(id, datos), null));
 
   ipcMain.handle('video:estado', () => estadoVideo);
   ipcMain.handle('video:recolocar', () => { colocarVideo(true); return estadoVideo; });

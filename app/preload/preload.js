@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('mezcladora', {
     agregarCarpeta: () => ipcRenderer.invoke('biblioteca:agregarCarpeta'),
     // Guarda duración y resolución que se conocen al cargar la canción en un deck
     guardarInfo: (id, info) => ipcRenderer.invoke('biblioteca:guardarInfo', id, info),
+    // Corrige título/artista a mano; datos vacíos = volver a lo automático → { titulo, artista, nombre_manual }
+    editarNombre: (id, datos) => ipcRenderer.invoke('biblioteca:editarNombre', id, datos),
   },
   video: {
     // { conectada, nombre, ancho, alto } de la pantalla externa

@@ -192,6 +192,43 @@ select{background:var(--bg);color:var(--text);border:1px solid var(--line);borde
 #toast.show{opacity:1;transform:translateX(-50%)}
 #mediaPool{position:fixed;left:0;top:0;width:2px;height:2px;overflow:hidden;opacity:0;pointer-events:none}
 
+/* ---------- Biblioteca (diseño) ---------- */
+.libNav{flex:0 1 200px;min-width:170px;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.libNav .lbl{margin-bottom:4px}
+.libNav .navSep{margin-top:10px}
+.navItem{display:flex;justify-content:space-between;align-items:center;gap:6px;width:100%;text-align:left;font:14px var(--sans);color:var(--text);
+  background:transparent;border:0;border-radius:6px;padding:7px 10px;cursor:pointer}
+.navItem:hover:not(:disabled){background:#181c22}
+.navItem.on{background:var(--ctrl)}
+.navItem:disabled{color:var(--muted);opacity:.55;cursor:default}
+.navItem .n{color:var(--muted);font-size:12px}
+.navItem .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.navBtns{display:flex;gap:6px;margin-top:8px}
+.navBtns .btn{flex:1;justify-content:center}
+.search{flex:1 1 240px;display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:0 10px;min-height:36px;cursor:text}
+.search:focus-within{border-color:var(--warn)}
+.search svg{width:16px;height:16px;fill:none;stroke:var(--muted);stroke-width:2;flex:none}
+.search input{flex:1;min-width:0;background:transparent;border:0;color:var(--text);font:14px var(--sans);outline:none}
+.searchHint{color:var(--warn);font-size:12px;flex:1}
+.lib th.cDeck,.lib td.cDeck{width:22px;padding-right:0}
+.lib td.cDeck{font:600 11px var(--mono)}
+.lib td.cDeck.A{color:var(--a)} .lib td.cDeck.B{color:var(--b)}
+.lib tr.enDeck{background:#181c22}
+.lib td.tTit{max-width:0;width:44%;overflow:hidden;text-overflow:ellipsis}
+.lib td.tArt{max-width:0;width:28%;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.lib td.tSm{font-size:12px;color:var(--soft)}
+.lib td.na{color:var(--line2)}
+.lib .manual{color:var(--a);font-size:11px;margin-left:4px}
+.libLoad .edit{font-size:12px}
+.libFoot{font-size:12px;color:var(--muted)}
+.libFoot b{color:var(--soft)}
+.nameBox{width:min(520px,100%);display:flex;flex-direction:column;gap:10px}
+.field{display:flex;flex-direction:column;gap:4px;color:var(--muted);font-size:13px}
+.field input{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font:14px var(--sans);outline:none}
+.field input:focus{border-color:var(--warn)}
+.nameBtns{display:flex;gap:6px;align-items:center}
+.nameBtns span{flex:1}
+
 /* ---------- Pantallas bajas (laptop 1536×816 con escala 125 %) ---------- */
 @media (max-height:900px){
   .app{gap:8px;padding:8px;--fh:116px}
@@ -216,6 +253,10 @@ select{background:var(--bg);color:var(--text);border:1px solid var(--line);borde
   .panel{padding:10px}
   .vidPreview{height:56px}
   .lib td{padding:4px 8px}
+  .libFoot{display:none}
+  .navItem{padding:4px 10px}
+  .libNav .navSep{margin-top:6px}
+  .search{min-height:30px}
 }
 
 /* ---------- Configuración: teclas ---------- */
