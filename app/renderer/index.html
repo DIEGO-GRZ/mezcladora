@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- 'unsafe-inline' en scripts solo mientras la ventana de video sea el popup del prototipo
+     (escribe su propia página con un <script> en línea). Se quita al crear app/video/. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; media-src 'self' blob: mediastream:; img-src 'self' data: blob:">
+<title>Mezcladora Personal</title>
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<header>
+  <h1>MEZCLADORA PERSONAL</h1>
+  <div class="status" id="status">Haz clic o presiona una tecla para activar el audio</div>
+</header>
+
+<main>
+  <section class="deck" data-deck="A"></section>
+
+  <section class="center">
+    <button id="autoBtn" class="big">Transición <kbd>Espacio</kbd></button>
+    <div>
+      <div class="xflabels"><span>A</span><span>B</span></div>
+      <input type="range" id="xf" min="0" max="1000" value="0">
+    </div>
+    <div class="onair" id="onair">Al aire: A</div>
+    <label class="row">Duración
+      <select id="fade"><option value="4">4 s</option><option value="8">8 s</option><option value="16">16 s</option><option value="32">32 s</option></select>
+      <kbd>T</kbd>
+    </label>
+    <label class="row"><input type="checkbox" id="stopOld"> Pausar la canción anterior al terminar</label>
+    <button id="cutBtn">Corte instantáneo <kbd>Shift+Espacio</kbd></button>
+    <div class="vidbtns">
+      <button id="videoBtn">Pantalla video</button>
+      <button id="blackBtn">Negro <kbd>V</kbd></button>
+    </div>
+    <div class="help">
+      <div><span>Mover crossfader</span><kbd>← →</kbd></div>
+      <div><span>Borrar marca</span><kbd>Shift + E / O</kbd></div>
+      <div><span>Cargar canción</span><kbd>1 / 2</kbd></div>
+      <div><span>Pantalla de video en negro</span><kbd>V</kbd></div>
+    </div>
+  </section>
+
+  <section class="deck" data-deck="B"></section>
+</main>
+
+<section class="panel">
+  <h2>SALIDAS DE AUDIO</h2>
+  <div class="outs">
+    <label>Bocinas / Bluetooth (lo que oyen todos)<select id="outMaster"></select></label>
+    <label>Audífonos (pre-escucha)<select id="outCue"></select></label>
+    <button id="detect">Detectar dispositivos</button>
+  </div>
+  <p class="hint">"Detectar dispositivos" pide permiso de micrófono solo para que Chrome muestre los nombres de tus salidas; no se graba nada.</p>
+</section>
+
+<div id="toast"></div>
+<div id="mediaPool" aria-hidden="true"></div>
+
+<script src="mezcladora.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# Dependencias
+node_modules/
+
+# Datos locales: biblioteca y stems (pesan mucho y son personales)
+datos/
+
+# Compilados de Electron
+out/
+dist/
+
+# Python (preparador)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Varios
+*.log
+.DS_Store
+Thumbs.db

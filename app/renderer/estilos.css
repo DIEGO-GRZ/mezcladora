@@ -1,0 +1,52 @@
+:root{--bg:#0e1014;--panel:#171a21;--line:#2a2f3a;--text:#e8eaf0;--muted:#8a90a0;--a:#22c3ee;--b:#f472b6;--ok:#4ade80;--warn:#fbbf24}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,"Segoe UI",sans-serif}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;border-bottom:1px solid var(--line)}
+h1{font-size:16px;margin:0;letter-spacing:.5px}
+.status{font-size:12px;color:var(--muted);padding:4px 10px;border:1px solid var(--line);border-radius:999px}
+.status.ok{color:var(--ok);border-color:var(--ok)}
+main{display:grid;grid-template-columns:1fr 240px 1fr;gap:16px;padding:16px 20px}
+.deck,.center,.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.deck[data-deck="A"]{--c:var(--a)} .deck[data-deck="B"]{--c:var(--b)}
+.deck.live{border-color:var(--c);box-shadow:0 0 0 1px var(--c) inset}
+.deck h2,.panel h2{margin:0 0 8px;font-size:13px;letter-spacing:1px;color:var(--c,var(--muted))}
+.title{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:22px}
+.drop{border:1px dashed var(--line);border-radius:8px;padding:10px;text-align:center;color:var(--muted);cursor:pointer;margin:8px 0}
+.drop:hover,.drop.over{border-color:var(--c);color:var(--c)}
+.bar{position:relative;height:40px;background:#0a0c10;border-radius:6px;cursor:pointer;overflow:hidden}
+.bar .fill{position:absolute;top:0;bottom:0;left:0;width:0;background:color-mix(in srgb,var(--c) 35%,transparent)}
+.bar .mark{position:absolute;top:0;bottom:0;width:3px;margin-left:-1px;background:var(--warn);display:none}
+.deck.ending .bar{animation:blink 1s infinite}
+@keyframes blink{50%{box-shadow:0 0 0 2px var(--warn) inset}}
+.times{display:flex;justify-content:space-between;color:var(--muted);font-variant-numeric:tabular-nums;margin-top:4px}
+.btns{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:10px}
+button{background:#232833;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;font:inherit;display:flex;justify-content:space-between;align-items:center;gap:6px}
+button:hover{border-color:var(--c,var(--muted))}
+button.on{background:var(--c,var(--ok));color:#000;border-color:var(--c,var(--ok))}
+button.on kbd{color:#000;background:transparent;border-color:#0004}
+kbd{font:11px ui-monospace,monospace;background:#0a0c10;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:var(--muted);white-space:nowrap}
+label.row{display:flex;align-items:center;gap:8px;margin-top:10px;color:var(--muted)}
+input[type=range]{flex:1;accent-color:var(--c,#cbd5e1)}
+select{background:#0a0c10;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px;font:inherit;max-width:100%}
+.markinfo{margin-top:8px;font-size:12px;color:var(--warn);min-height:16px}
+.center{display:flex;flex-direction:column;gap:12px}
+.big{justify-content:center;padding:16px;font-size:16px;font-weight:600;--c:var(--ok)}
+.xflabels{display:flex;justify-content:space-between;font-weight:700}
+.xflabels span:first-child{color:var(--a)} .xflabels span:last-child{color:var(--b)}
+#xf{width:100%}
+.onair{text-align:center;font-weight:600;color:var(--ok)}
+.help{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
+.help div{display:flex;justify-content:space-between;margin:3px 0}
+.panel{margin:0 20px 20px}
+.outs{display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end}
+.outs label{display:flex;flex-direction:column;gap:4px;color:var(--muted)}
+.hint{color:var(--muted);font-size:12px;margin:10px 0 0}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:#232833;border:1px solid var(--line);padding:10px 16px;border-radius:8px;opacity:0;transition:.2s;pointer-events:none;max-width:90vw}
+#toast.show{opacity:1;transform:translateX(-50%)}
+.badge{font-size:10px;padding:1px 6px;border-radius:4px;margin-left:6px;border:1px solid var(--line);color:var(--muted);letter-spacing:.5px}
+.badge:empty{display:none}
+.badge.video{color:var(--warn);border-color:var(--warn)}
+.vidbtns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.vidbtns button{--c:var(--warn)}
+#mediaPool{position:fixed;left:0;top:0;width:2px;height:2px;overflow:hidden;opacity:0;pointer-events:none}
+@media (max-width:900px){main{grid-template-columns:1fr}.outs{grid-template-columns:1fr}}

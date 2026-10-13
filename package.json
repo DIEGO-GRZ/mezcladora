@@ -1,0 +1,14 @@
+{
+  "name": "mezcladora-personal",
+  "version": "0.1.0",
+  "description": "Mezcladora de música y video desde el teclado, con stems por IA y salida de video a segunda pantalla.",
+  "private": true,
+  "main": "app/main/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "Diego Guerrero",
+  "devDependencies": {
+    "electron": "^44.7.0"
+  }
+}

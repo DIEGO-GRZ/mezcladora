@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Mezcladora Personal · modo DJ</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&amp;family=Barlow+Condensed:wght@600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0D0F12}
+a{color:#2EC4E6}a:hover{color:#7FDDF2}
+.kbd{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1;padding:3px 5px;border-radius:4px;border:1px solid #3A414D;background:#0D0F12;color:#B8C0CC;white-space:nowrap}
+.btn{font-family:'Barlow',sans-serif;font-size:13px;font-weight:600;color:#E9ECF1;background:#1C2027;border:1px solid #2A2F38;border-radius:8px;min-height:44px;padding:0 10px;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer}
+.lbl{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;letter-spacing:.08em;color:#9AA3B2;text-transform:uppercase}
+.mono{font-family:'JetBrains Mono',monospace}
+</style>
+</helmet>
+<div style="width: 100%; min-height: 1120px; box-sizing: border-box; background: #0D0F12; color: #E9ECF1; font-family: 'Barlow', sans-serif; padding: 12px; display: flex; flex-direction: column; gap: 12px">
+
+  <header style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 4px 0">
+    <div style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap">
+      <div style="font-family: 'Barlow Condensed', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: .06em">MEZCLADORA <span style="color: #2EC4E6">PERSONAL</span></div>
+      <nav aria-label="Modo" style="display: flex; gap: 4px; background: #15181D; border: 1px solid #2A2F38; border-radius: 10px; padding: 4px">
+        <button class="btn" style="background: #E9ECF1; color: #0D0F12; border-color: #E9ECF1; min-height: 36px">DJ</button>
+        <button class="btn" style="background: transparent; border-color: transparent; min-height: 36px">Temas</button>
+        <button class="btn" style="background: transparent; border-color: transparent; min-height: 36px">Teatro</button>
+      </nav>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid #2A2F38; border-radius: 8px; background: #15181D; font-size: 13px"><span style="width: 8px; height: 8px; border-radius: 4px; background: #4ADE80"></span>Bocinas Bluetooth</div>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid #2A2F38; border-radius: 8px; background: #15181D; font-size: 13px"><span style="width: 8px; height: 8px; border-radius: 4px; background: #4ADE80"></span>Audífonos</div>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid #2A2F38; border-radius: 8px; background: #15181D; font-size: 13px"><span style="width: 8px; height: 8px; border-radius: 4px; background: #4ADE80"></span>TV · video</div>
+      <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid #2A2F38; border-radius: 8px; background: #15181D">
+        <span class="lbl">Maestro</span>
+        <div style="display: flex; gap: 2px" aria-hidden="true">
+          <span style="width: 6px; height: 14px; background: #4ADE80"></span><span style="width: 6px; height: 14px; background: #4ADE80"></span><span style="width: 6px; height: 14px; background: #4ADE80"></span><span style="width: 6px; height: 14px; background: #4ADE80"></span><span style="width: 6px; height: 14px; background: #4ADE80"></span><span style="width: 6px; height: 14px; background: #F5B942"></span><span style="width: 6px; height: 14px; background: #2A2F38"></span><span style="width: 6px; height: 14px; background: #2A2F38"></span>
+        </div>
+        <span style="font-size: 12px; color: #4ADE80; font-weight: 600">Limitador</span>
+      </div>
+      <button class="btn" aria-label="Pánico: apagar todo con fundido" style="border-color: #E5484D; color: #FF8A8E">Pánico <span class="kbd">Esc</span></button>
+    </div>
+  </header>
+
+  <section aria-label="Formas de onda" style="position: relative; background: #15181D; border: 1px solid #2A2F38; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <span style="font-family: 'Barlow Condensed', sans-serif; font-weight: 700; color: #2EC4E6; width: 16px">A</span>
+      <div style="flex: 1 1 auto; display: flex; align-items: center; gap: 2px; height: 48px">
+        <sc-for list="{{waveA}}" as="b" hint-placeholder-count="180"><div style="flex: 1 1 0; min-width: 1px; border-radius: 1px; height: {{b.h}}; background: {{b.c}}"></div></sc-for>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px">
+      <span style="font-family: 'Barlow Condensed', sans-serif; font-weight: 700; color: #F0609E; width: 16px">B</span>
+      <div style="flex: 1 1 auto; display: flex; align-items: center; gap: 2px; height: 48px">
+        <sc-for list="{{waveB}}" as="b" hint-placeholder-count="180"><div style="flex: 1 1 0; min-width: 1px; border-radius: 1px; height: {{b.h}}; background: {{b.c}}"></div></sc-for>
+      </div>
+    </div>
+    <div aria-hidden="true" style="position: absolute; top: 6px; bottom: 6px; left: calc(50% + 13px); width: 2px; background: #E9ECF1; border-radius: 1px"></div>
+  </section>
+
+  <main style="display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch">
+
+    <section aria-label="Deck A" style="flex: 1 1 440px; min-width: 0; background: #15181D; border: 2px solid #2EC4E6; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; justify-content: space-between; gap: 12px">
+        <div style="min-width: 0">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px">
+            <span style="font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 14px; color: #0D0F12; background: #2EC4E6; border-radius: 4px; padding: 1px 7px">A</span>
+            <span style="font-size: 12px; font-weight: 600; color: #4ADE80">AL AIRE</span>
+            <span style="font-size: 11px; font-weight: 600; color: #F5B942; border: 1px solid #F5B942; border-radius: 4px; padding: 1px 6px">VIDEO 1080p</span>
+            <span style="font-size: 11px; font-weight: 600; color: #4ADE80; border: 1px solid #4ADE80; border-radius: 4px; padding: 1px 6px">STEMS LISTOS</span>
+          </div>
+          <div style="font-size: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">Tití Me Preguntó</div>
+          <div style="font-size: 14px; color: #9AA3B2">Bad Bunny</div>
+        </div>
+        <div style="text-align: right; flex: 0 0 auto">
+          <div class="mono" style="font-size: 30px; color: #2EC4E6; line-height: 1">111.0</div>
+          <div style="display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; align-items: center">
+            <span class="lbl">BPM</span>
+            <span class="mono" style="font-size: 12px; background: #1C2027; border: 1px solid #2A2F38; border-radius: 4px; padding: 2px 6px">4A · Fm</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div style="position: relative; display: flex; align-items: center; gap: 1px; height: 32px; background: #0D0F12; border-radius: 6px; padding: 0 4px">
+          <sc-for list="{{overA}}" as="b" hint-placeholder-count="100"><div style="flex: 1 1 0; min-width: 1px; height: {{b.h}}; background: {{b.c}}"></div></sc-for>
+          <div aria-hidden="true" style="position: absolute; left: 2%; top: 0; bottom: 0; width: 2px; background: #F5B942"></div>
+          <div aria-hidden="true" style="position: absolute; left: 18%; top: 0; height: 8px; width: 8px; background: #4ADE80"></div>
+          <div aria-hidden="true" style="position: absolute; left: 46%; top: 0; height: 8px; width: 8px; background: #A78BFA"></div>
+          <div aria-hidden="true" style="position: absolute; left: 35%; top: -2px; bottom: -2px; width: 2px; background: #E9ECF1"></div>
+          <div aria-hidden="true" style="position: absolute; left: 92%; top: 0; bottom: 0; width: 2px; background: #FB923C"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; color: #9AA3B2">
+          <span><span class="mono" style="color: #E9ECF1">1:42</span> transcurrido</span>
+          <span><span style="color: #F5B942">▮</span> inicio · <span style="color: #FB923C">▮</span> salida</span>
+          <span><span class="mono" style="color: #E9ECF1">-3:08</span> restante</span>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+        <button class="btn" style="background: #2EC4E6; color: #04161C; border-color: #2EC4E6">⏸ Pausa <span class="kbd" style="background: transparent; color: #04161C; border-color: #04161C55">Q</span></button>
+        <button class="btn">Audífonos <span class="kbd">W</span></button>
+        <button class="btn">Marcar <span class="kbd">E</span></button>
+        <button class="btn">Al inicio <span class="kbd">R</span></button>
+        <button class="btn">−5 s <span class="kbd">A</span></button>
+        <button class="btn">+5 s <span class="kbd">S</span></button>
+        <button class="btn">Loop 4 <span class="kbd">D</span></button>
+        <button class="btn">Sync <span class="kbd">F</span></button>
+      </div>
+
+      <div>
+        <div class="lbl" style="margin-bottom: 6px">Stems</div>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+          <button class="btn" style="border-color: #2EC4E6; color: #2EC4E6">Voz <span class="kbd">Z</span></button>
+          <button class="btn" style="border-color: #2EC4E6; color: #2EC4E6">Melodía <span class="kbd">X</span></button>
+          <button class="btn" style="border-color: #2EC4E6; color: #2EC4E6">Bajo <span class="kbd">C</span></button>
+          <button class="btn" style="border-color: #2EC4E6; color: #2EC4E6">Batería <span class="kbd">V</span></button>
+          <button class="btn">Acapella <span class="kbd">⇧Z</span></button>
+          <button class="btn">Instrumental <span class="kbd">⇧X</span></button>
+          <button class="btn">Kick <span class="kbd">⇧C</span></button>
+          <button class="btn">HiHat <span class="kbd">⇧V</span></button>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px; flex-wrap: wrap">
+        <div style="flex: 1 1 220px">
+          <div class="lbl" style="margin-bottom: 6px">Hot cues <span style="text-transform: none; letter-spacing: 0">(⇧ = guardar)</span></div>
+          <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+            <button class="btn" style="background: #4ADE8022; border-color: #4ADE80">Cue 1 <span class="kbd">1</span></button>
+            <button class="btn" style="background: #A78BFA22; border-color: #A78BFA">Cue 2 <span class="kbd">2</span></button>
+            <button class="btn" style="color: #9AA3B2">— <span class="kbd">3</span></button>
+            <button class="btn" style="color: #9AA3B2">— <span class="kbd">4</span></button>
+          </div>
+        </div>
+        <div style="flex: 0 1 140px">
+          <div class="lbl" style="margin-bottom: 6px">Efecto</div>
+          <button class="btn" style="width: 100%">Eco ▾ <span class="kbd">G</span></button>
+        </div>
+      </div>
+    </section>
+
+    <section aria-label="Mixer" style="flex: 0 1 400px; min-width: 300px; background: #15181D; border: 1px solid #2A2F38; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; justify-content: space-between; gap: 8px">
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: center">
+          <sc-for list="{{knobsA}}" as="k" hint-placeholder-count="4">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 2px">
+              <svg width="38" height="38" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="16" fill="#1C2027" stroke="#2A2F38" stroke-width="2"></circle><g style="transform-origin: 20px 20px; transform: {{k.rot}}"><line x1="20" y1="20" x2="20" y2="7" stroke="#2EC4E6" stroke-width="3" stroke-linecap="round"></line></g></svg>
+              <span class="lbl" style="font-size: 11px">{{k.label}}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display: flex; gap: 10px; align-items: flex-end">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 8px">
+            <div style="display: flex; gap: 6px; align-items: flex-end; height: 200px">
+              <div aria-hidden="true" style="width: 8px; height: 200px; border-radius: 4px; background: linear-gradient(to top, #4ADE80 0 62%, #F5B942 62% 70%, #1C2027 70%)"></div>
+              <label style="display: flex; flex-direction: column; align-items: center"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Volumen deck A</span><input type="range" min="0" max="100" value="85" style="writing-mode: vertical-lr; direction: rtl; height: 200px; width: 28px; accent-color: #2EC4E6"></label>
+            </div>
+            <button class="btn" aria-label="Pre-escucha deck A" style="min-height: 36px; padding: 0 10px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3"></path><rect x="3" y="14" width="5" height="7" rx="2"></rect><rect x="16" y="14" width="5" height="7" rx="2"></rect></svg></button>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 8px">
+            <div style="display: flex; gap: 6px; align-items: flex-end; height: 200px">
+              <label style="display: flex; flex-direction: column; align-items: center"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Volumen deck B</span><input type="range" min="0" max="100" value="85" style="writing-mode: vertical-lr; direction: rtl; height: 200px; width: 28px; accent-color: #F0609E"></label>
+              <div aria-hidden="true" style="width: 8px; height: 200px; border-radius: 4px; background: #1C2027"></div>
+            </div>
+            <button class="btn" aria-label="Pre-escucha deck B" style="min-height: 36px; padding: 0 10px; background: #F0609E; border-color: #F0609E; color: #1F0612"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3"></path><rect x="3" y="14" width="5" height="7" rx="2"></rect><rect x="16" y="14" width="5" height="7" rx="2"></rect></svg></button>
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: center">
+          <sc-for list="{{knobsB}}" as="k" hint-placeholder-count="4">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 2px">
+              <svg width="38" height="38" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="16" fill="#1C2027" stroke="#2A2F38" stroke-width="2"></circle><g style="transform-origin: 20px 20px; transform: {{k.rot}}"><line x1="20" y1="20" x2="20" y2="7" stroke="#F0609E" stroke-width="3" stroke-linecap="round"></line></g></svg>
+              <span class="lbl" style="font-size: 11px">{{k.label}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+
+      <div>
+        <div style="display: flex; justify-content: space-between; font-family: 'Barlow Condensed', sans-serif; font-weight: 700"><span style="color: #2EC4E6">A</span><span class="lbl">Crossfader <span class="kbd">← →</span></span><span style="color: #F0609E">B</span></div>
+        <label><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Crossfader</span><input type="range" min="0" max="100" value="12" style="width: 100%; accent-color: #E9ECF1"></label>
+      </div>
+
+      <div>
+        <div class="lbl" style="margin-bottom: 6px">Estilo de transición</div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px">
+          <button class="btn" style="background: #E9ECF1; color: #0D0F12; border-color: #E9ECF1">Mezcla larga <span class="kbd" style="background: transparent; color: #0D0F12; border-color: #0D0F1255">F1</span></button>
+          <button class="btn">Corte <span class="kbd">F2</span></button>
+          <button class="btn">Filtro <span class="kbd">F3</span></button>
+          <button class="btn">Eco de salida <span class="kbd">F4</span></button>
+          <button class="btn">Loop y subida <span class="kbd">F5</span></button>
+          <button class="btn">Cambio de voz <span class="kbd">F6</span></button>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 6px">
+        <button class="btn" style="flex: 0 0 auto">8 s <span class="kbd">T</span></button>
+        <button class="btn" style="flex: 1 1 auto; justify-content: center; gap: 12px; background: #4ADE80; color: #062611; border-color: #4ADE80; font-size: 15px; min-height: 52px">TRANSICIÓN A → B <span class="kbd" style="background: transparent; color: #062611; border-color: #06261155">Espacio</span></button>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px">
+        <button class="btn">Corte <span class="kbd">⇧Espacio</span></button>
+        <button class="btn">Bajar música <span class="kbd">mantén &lt;</span></button>
+      </div>
+    </section>
+
+    <section aria-label="Deck B" style="flex: 1 1 440px; min-width: 0; background: #15181D; border: 1px solid #2A2F38; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 12px">
+      <div style="display: flex; justify-content: space-between; gap: 12px">
+        <div style="min-width: 0">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px">
+            <span style="font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 14px; color: #1F0612; background: #F0609E; border-radius: 4px; padding: 1px 7px">B</span>
+            <span style="font-size: 12px; font-weight: 600; color: #F0609E">EN AUDÍFONOS</span>
+            <span style="font-size: 11px; font-weight: 600; color: #F5B942; border: 1px solid #F5B942; border-radius: 4px; padding: 1px 6px">VISUALIZER</span>
+            <span style="font-size: 11px; font-weight: 600; color: #4ADE80; border: 1px solid #4ADE80; border-radius: 4px; padding: 1px 6px">STEMS LISTOS</span>
+          </div>
+          <div style="font-size: 20px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">LA SANTA</div>
+          <div style="font-size: 14px; color: #9AA3B2">Bad Bunny x Daddy Yankee</div>
+        </div>
+        <div style="text-align: right; flex: 0 0 auto">
+          <div class="mono" style="font-size: 30px; color: #F0609E; line-height: 1">93.0</div>
+          <div style="display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; align-items: center">
+            <span class="lbl">BPM</span>
+            <span class="mono" style="font-size: 12px; background: #4ADE8022; border: 1px solid #4ADE80; color: #4ADE80; border-radius: 4px; padding: 2px 6px">3A · A#m ✓</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div style="position: relative; display: flex; align-items: center; gap: 1px; height: 32px; background: #0D0F12; border-radius: 6px; padding: 0 4px">
+          <sc-for list="{{overB}}" as="b" hint-placeholder-count="100"><div style="flex: 1 1 0; min-width: 1px; height: {{b.h}}; background: {{b.c}}"></div></sc-for>
+          <div aria-hidden="true" style="position: absolute; left: 4%; top: -2px; bottom: -2px; width: 2px; background: #F5B942"></div>
+          <div aria-hidden="true" style="position: absolute; left: 30%; top: 0; height: 8px; width: 8px; background: #4ADE80"></div>
+          <div aria-hidden="true" style="position: absolute; left: 90%; top: 0; bottom: 0; width: 2px; background: #FB923C"></div>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; color: #9AA3B2">
+          <span><span class="mono" style="color: #E9ECF1">0:08</span> en la marca de inicio</span>
+          <span><span class="mono" style="color: #E9ECF1">-3:19</span> restante</span>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+        <button class="btn">▶ Play <span class="kbd">U</span></button>
+        <button class="btn" style="background: #F0609E; color: #1F0612; border-color: #F0609E">Audífonos <span class="kbd" style="background: transparent; color: #1F0612; border-color: #1F061255">I</span></button>
+        <button class="btn">Marcar <span class="kbd">O</span></button>
+        <button class="btn">Al inicio <span class="kbd">P</span></button>
+        <button class="btn">−5 s <span class="kbd">J</span></button>
+        <button class="btn">+5 s <span class="kbd">K</span></button>
+        <button class="btn">Loop 4 <span class="kbd">L</span></button>
+        <button class="btn">Sync <span class="kbd">Ñ</span></button>
+      </div>
+
+      <div>
+        <div class="lbl" style="margin-bottom: 6px">Stems</div>
+        <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+          <button class="btn" style="color: #9AA3B2; text-decoration: line-through">Voz <span class="kbd">M</span></button>
+          <button class="btn" style="border-color: #F0609E; color: #F0609E">Melodía <span class="kbd">,</span></button>
+          <button class="btn" style="border-color: #F0609E; color: #F0609E">Bajo <span class="kbd">.</span></button>
+          <button class="btn" style="border-color: #F0609E; color: #F0609E">Batería <span class="kbd">-</span></button>
+          <button class="btn">Acapella <span class="kbd">⇧M</span></button>
+          <button class="btn" style="background: #F0609E; color: #1F0612; border-color: #F0609E">Instrumental <span class="kbd" style="background: transparent; color: #1F0612; border-color: #1F061255">⇧,</span></button>
+          <button class="btn">Kick <span class="kbd">⇧.</span></button>
+          <button class="btn">HiHat <span class="kbd">⇧-</span></button>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 12px; flex-wrap: wrap">
+        <div style="flex: 1 1 220px">
+          <div class="lbl" style="margin-bottom: 6px">Hot cues <span style="text-transform: none; letter-spacing: 0">(⇧ = guardar)</span></div>
+          <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+            <button class="btn" style="background: #4ADE8022; border-color: #4ADE80">Cue 1 <span class="kbd">7</span></button>
+            <button class="btn" style="color: #9AA3B2">— <span class="kbd">8</span></button>
+            <button class="btn" style="color: #9AA3B2">— <span class="kbd">9</span></button>
+            <button class="btn" style="color: #9AA3B2">— <span class="kbd">0</span></button>
+          </div>
+        </div>
+        <div style="flex: 0 1 140px">
+          <div class="lbl" style="margin-bottom: 6px">Efecto</div>
+          <button class="btn" style="width: 100%">Filtro ▾ <span class="kbd">H</span></button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <section aria-label="Biblioteca" style="display: flex; flex-wrap: wrap; gap: 12px">
+    <nav aria-label="Carpetas" style="flex: 0 1 200px; min-width: 180px; background: #15181D; border: 1px solid #2A2F38; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 4px">
+      <div class="lbl" style="margin-bottom: 4px">Biblioteca</div>
+      <a href="#" style="color: #E9ECF1; text-decoration: none; padding: 8px 10px; border-radius: 6px; background: #1C2027; font-size: 14px">Videos <span style="color: #9AA3B2; font-size: 12px">· 70</span></a>
+      <a href="#" style="color: #E9ECF1; text-decoration: none; padding: 8px 10px; border-radius: 6px; font-size: 14px">Música</a>
+      <a href="#" style="color: #E9ECF1; text-decoration: none; padding: 8px 10px; border-radius: 6px; font-size: 14px">Con stems</a>
+      <a href="#" style="color: #E9ECF1; text-decoration: none; padding: 8px 10px; border-radius: 6px; font-size: 14px">Mis listas</a>
+      <a href="#" style="color: #E9ECF1; text-decoration: none; padding: 8px 10px; border-radius: 6px; font-size: 14px">Lista de escena</a>
+      <a href="#" style="color: #E9ECF1; text-decoration: none; padding: 8px 10px; border-radius: 6px; font-size: 14px">Efectos de sonido</a>
+    </nav>
+
+    <div style="flex: 999 1 560px; min-width: 0; background: #15181D; border: 1px solid #2A2F38; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap">
+        <label style="flex: 1 1 260px; display: flex; align-items: center; gap: 8px; background: #0D0F12; border: 1px solid #2A2F38; border-radius: 8px; padding: 0 10px; min-height: 40px">
+          <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Buscar en la biblioteca</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA3B2" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
+          <input type="search" placeholder="Buscar canción, artista o BPM" style="flex: 1 1 auto; background: transparent; border: 0; color: #E9ECF1; font: inherit; font-size: 14px; outline: none">
+        </label>
+        <span style="font-size: 12px; color: #9AA3B2"><span class="kbd">↑ ↓</span> elegir · <span class="kbd">Enter</span> a deck A · <span class="kbd">⇧Enter</span> a deck B</span>
+      </div>
+      <div style="overflow-x: auto">
+        <div style="min-width: 760px">
+          <div style="display: grid; grid-template-columns: 34px minmax(0, 2.2fr) minmax(0, 1.6fr) 70px 70px 96px 96px 120px; gap: 8px; padding: 6px 8px; border-bottom: 1px solid #2A2F38" class="lbl">
+            <span></span><span>Título</span><span>Artista</span><span>Duración</span><span>BPM</span><span>Tono</span><span>Video</span><span>Stems</span>
+          </div>
+          <sc-for list="{{rows}}" as="r" hint-placeholder-count="12">
+            <div style="display: grid; grid-template-columns: 34px minmax(0, 2.2fr) minmax(0, 1.6fr) 70px 70px 96px 96px 120px; gap: 8px; padding: 7px 8px; border-bottom: 1px solid #1C2027; font-size: 14px; align-items: center; background: {{r.bg}}">
+              <span class="mono" style="font-size: 11px; font-weight: 600; color: {{r.deckColor}}">{{r.deck}}</span>
+              <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{r.title}}</span>
+              <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #9AA3B2">{{r.artist}}</span>
+              <span class="mono" style="font-size: 12px; color: #B8C0CC">{{r.dur}}</span>
+              <span class="mono" style="font-size: 12px; color: #B8C0CC">{{r.bpm}}</span>
+              <span class="mono" style="font-size: 12px; color: {{r.keyColor}}">{{r.key}}</span>
+              <span style="font-size: 12px; color: {{r.resColor}}">{{r.res}}</span>
+              <span style="font-size: 12px; font-weight: 600; color: {{r.stemColor}}">{{r.stems}}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="font-size: 12px; color: #9AA3B2">Tono en verde = compatible con lo que suena (rueda Camelot) · Resolución en amarillo = se verá borroso en el proyector</div>
+    </div>
+
+    <aside aria-label="Video y preparación" style="flex: 1 1 260px; min-width: 240px; display: flex; flex-direction: column; gap: 12px">
+      <div style="background: #15181D; border: 1px solid #2A2F38; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; justify-content: space-between; align-items: center"><span class="lbl">Salida de video · TV</span><span style="font-size: 12px; color: #4ADE80; font-weight: 600">Muestra deck A</span></div>
+        <div style="height: 96px; border-radius: 8px; border: 1px dashed #3A414D; display: flex; align-items: center; justify-content: center; font-size: 13px; color: #9AA3B2; text-align: center; padding: 0 12px">Vista previa apagada<br>(el video solo se ve en la TV)</div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px">
+          <button class="btn">Negro <span class="kbd">B</span></button>
+          <button class="btn" style="justify-content: center">Logo</button>
+          <button class="btn" style="justify-content: center">Texto</button>
+        </div>
+      </div>
+      <div style="background: #15181D; border: 1px solid #2A2F38; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px">
+        <div class="lbl">Preparación de stems</div>
+        <div style="font-size: 13px">Baile Inolvidable</div>
+        <div style="height: 8px; border-radius: 4px; background: #1C2027; overflow: hidden"><div style="width: 64%; height: 100%; background: #F5B942"></div></div>
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #9AA3B2"><span>64% · GPU</span><span>1 en cola</span></div>
+        <div style="font-size: 12px; color: #9AA3B2">Se pausa sola mientras haya música sonando.</div>
+        <button class="btn" style="justify-content: center">Liberar espacio</button>
+      </div>
+    </aside>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1120}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const mk = (n, seed, max, cut, on, off) => {
+      const out = [];
+      for (let i = 0; i < n; i++) {
+        const v = Math.abs(Math.sin(i * 0.21 + seed) * 0.6 + Math.sin(i * 0.047 * seed + 1) * 0.5 + Math.sin(i * 1.3 + seed * 2) * 0.25);
+        const h = Math.max(3, Math.round(max * Math.min(1, 0.2 + v * 0.65)));
+        out.push({ h: h + 'px', c: i < cut ? off : on });
+      }
+      return out;
+    };
+    const knob = (label, deg) => ({ label: label, rot: 'rotate(' + deg + 'deg)' });
+    const green = '#4ADE80', warn = '#F5B942', muted = '#9AA3B2', text = '#B8C0CC';
+    const row = (deck, title, artist, dur, bpm, key, ok, res, low, stems, stemColor) => ({
+      deck: deck, title: title, artist: artist, dur: dur, bpm: bpm, key: key, res: res, stems: stems,
+      deckColor: deck === 'A' ? '#2EC4E6' : '#F0609E',
+      keyColor: ok ? green : text,
+      resColor: low ? warn : text,
+      stemColor: stemColor,
+      bg: deck ? '#1C2027' : 'transparent'
+    });
+    return {
+      waveA: mk(180, 1.7, 46, 90, '#2EC4E6', '#1B6E82'),
+      waveB: mk(180, 2.9, 46, 90, '#F0609E', '#5A2A40'),
+      overA: mk(100, 1.7, 26, 35, '#2EC4E6', '#1B6E82'),
+      overB: mk(100, 2.9, 26, 4, '#F0609E', '#5A2A40'),
+      knobsA: [knob('Ganancia', 0), knob('Voz', 20), knob('Graves', -10), knob('Filtro', 0)],
+      knobsB: [knob('Ganancia', 0), knob('Voz', -135), knob('Graves', 0), knob('Filtro', 0)],
+      rows: [
+        row('A', 'Tití Me Preguntó', 'Bad Bunny', '4:50', '111.0', '4A · Fm', true, '1080p', false, 'Listo', green),
+        row('B', 'LA SANTA', 'Bad Bunny x Daddy Yankee', '3:27', '93.0', '3A · A#m', true, 'Visualizer', false, 'Listo', green),
+        row('', 'Ella y Yo (ft. Don Omar)', 'Aventura', '4:35', '88.0', '9A · Em', false, '720p', false, 'Listo', green),
+        row('', 'Baile Inolvidable (Extended)', 'Bad Bunny', '5:23', '~90.0', '8A · Am', false, '1080p', false, 'Preparando 64%', warn),
+        row('', 'Con Calma', 'Daddy Yankee & Snow', '3:31', '~94.0', '2B · F#', false, '1080p', false, 'En cola', warn),
+        row('', 'Shaky Shaky', 'Daddy Yankee', '3:59', '88.0', '1B · B', false, '1080p', false, 'Preparar', muted),
+        row('', 'Salió El Sol', 'Don Omar', '5:31', '110.0', '12B · E', false, '1080p', false, 'Preparar', muted),
+        row('', 'Virtual Diva', 'Don Omar', '5:13', '114.0', '1A · G#m', false, '1080p', false, 'Preparar', muted),
+        row('', 'Atrévete-Te-Te', 'Calle 13', '3:54', '~88.0', '7A · Dm', false, '480p', true, 'Preparar', muted),
+        row('', 'Satisfaction', 'Benny Benassi', '2:27', '~130.0', '10A · Bm', false, '240p', true, 'Preparar', muted),
+        row('', 'Se Me Olvidó', 'Christian Nodal', '2:59', '141.9', '8B · C', false, '1080p', false, 'Preparar', muted),
+        row('', 'edamame', 'bbno$ & Rich Brian', '2:21', '106.0', '8B · C', false, '1080p', false, 'Preparar', muted)
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>
