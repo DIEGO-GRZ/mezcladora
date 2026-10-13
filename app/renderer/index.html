@@ -3,9 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<!-- 'unsafe-inline' en scripts solo mientras la ventana de video sea el popup del prototipo
-     (escribe su propia página con un <script> en línea). Se quita al crear app/video/. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; media-src 'self' blob: mediastream:; img-src 'self' data: blob:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; media-src 'self' blob: mediastream:; img-src 'self' data: blob:">
 <title>Mezcladora Personal</title>
 <link rel="stylesheet" href="estilos.css">
 </head>
@@ -32,7 +30,7 @@
     <label class="row"><input type="checkbox" id="stopOld"> Pausar la canción anterior al terminar</label>
     <button id="cutBtn">Corte instantáneo <kbd>Shift+Espacio</kbd></button>
     <div class="vidbtns">
-      <button id="videoBtn">Pantalla video</button>
+      <button id="videoBtn">TV: buscando…</button>
       <button id="blackBtn">Negro <kbd>V</kbd></button>
     </div>
     <div class="help">

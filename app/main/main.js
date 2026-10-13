@@ -1,10 +1,24 @@
 'use strict';
-// Proceso principal de la Mezcladora Personal: crea la ventana y aplica las protecciones en vivo.
-const { app, BrowserWindow, Menu, dialog, session, shell } = require('electron');
+// Proceso principal de la Mezcladora Personal: crea las ventanas y aplica las protecciones en vivo.
+const { app, BrowserWindow, Menu, dialog, session, shell, protocol, net, screen, ipcMain } = require('electron');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
 const DEV = !app.isPackaged;
-let win = null;
+const APP_DIR = path.resolve(__dirname, '..');
+// Las páginas se sirven como app://mezcladora/... para que la mezcladora y la ventana de video
+// compartan origen (la mezcladora le pasa la imagen de los decks directamente)
+const ORIGEN = 'app://mezcladora';
+const URL_VIDEO = `${ORIGEN}/video/index.html`;
+
+let win = null;       // mezcladora
+let videoWin = null;  // salida de video (segunda pantalla)
+let estadoVideo = { conectada: false, nombre: '', ancho: 0, alto: 0 };
+let videoEn = null;   // id de la pantalla donde está la ventana de video
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+]);
 
 // Solo una mezcladora abierta a la vez (dos instancias pelearían por las salidas de audio)
 if (!app.requestSingleInstanceLock()) {
@@ -23,9 +37,32 @@ function arrancar() {
   Menu.setApplicationMenu(null);
 
   // Permisos: solo micrófono/medios (para ver los nombres de las salidas de audio) y pantalla completa
-  const PERMITIDOS = new Set(['media', 'speaker-selection', 'fullscreen', 'window-management']);
+  const PERMITIDOS = new Set(['media', 'speaker-selection', 'fullscreen']);
   session.defaultSession.setPermissionRequestHandler((_wc, permiso, cb) => cb(PERMITIDOS.has(permiso)));
   session.defaultSession.setPermissionCheckHandler((_wc, permiso) => PERMITIDOS.has(permiso));
+
+  // app://mezcladora/<ruta> → archivos dentro de app/, nunca fuera
+  protocol.handle('app', async req => {
+    try {
+      const u = new URL(req.url);
+      if (u.host !== 'mezcladora') return new Response('No encontrado', { status: 404 });
+      const archivo = path.resolve(APP_DIR, '.' + decodeURIComponent(u.pathname));
+      if (!archivo.startsWith(APP_DIR + path.sep)) return new Response('Prohibido', { status: 403 });
+      return await net.fetch(pathToFileURL(archivo).toString());
+    } catch {
+      return new Response('No encontrado', { status: 404 });
+    }
+  });
+
+  ipcMain.handle('video:estado', () => estadoVideo);
+  ipcMain.handle('video:recolocar', () => { colocarVideo(true); return estadoVideo; });
+
+  // Windows suele mandar varios avisos seguidos al conectar una pantalla: esperamos a que se calme
+  let espera;
+  const alCambiarPantallas = () => { clearTimeout(espera); espera = setTimeout(() => colocarVideo(true), 400); };
+  screen.on('display-added', alCambiarPantallas);
+  screen.on('display-removed', alCambiarPantallas);
+  screen.on('display-metrics-changed', alCambiarPantallas);
 
   crearVentana();
 }
@@ -53,23 +90,40 @@ function crearVentana() {
   });
 
   win.once('ready-to-show', () => { win.maximize(); win.show(); });
-  win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  win.loadURL(`${ORIGEN}/renderer/index.html`);
 
-  // Ventana de video del prototipo (popup en blanco que la mezcladora rellena). Cualquier otro enlace se abre en el navegador.
-  win.webContents.setWindowOpenHandler(({ url, frameName }) => {
-    if (frameName === 'salidaVideo' && (url === '' || url === 'about:blank')) {
+  // La única ventana que la mezcladora puede abrir es la salida de video. Cualquier enlace web va al navegador.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url === URL_VIDEO) {
+      // Si la mezcladora se recargó, la ventana vieja ya no recibe imagen: la reemplazamos
+      if (videoWin && !videoWin.isDestroyed()) videoWin.destroy();
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
           title: 'Salida de video',
+          show: false,
+          frame: false,
+          // Nunca toma el teclado: aunque le des clic, las teclas siguen yendo a la mezcladora
+          focusable: false,
+          skipTaskbar: true,
           backgroundColor: '#000000',
-          autoHideMenuBar: true,
           webPreferences: { backgroundThrottling: false, autoplayPolicy: 'no-user-gesture-required' },
         },
       };
     }
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  win.webContents.on('did-create-window', (ventana, { url }) => {
+    if (url !== URL_VIDEO) return;
+    videoWin = ventana;
+    // Mientras la mezcladora siga abierta, la ventana de video no se cierra (solo se oculta)
+    ventana.on('close', e => { if (win && !win.isDestroyed()) { e.preventDefault(); ventana.hide(); } });
+    ventana.on('closed', () => { if (videoWin === ventana) videoWin = null; });
+    // Solo puede cargar su propia página (window.open navega desde about:blank, eso sí se permite)
+    ventana.webContents.on('will-navigate', (e, destino) => { if (destino !== URL_VIDEO) e.preventDefault(); });
+    ventana.webContents.once('did-finish-load', () => colocarVideo(true));
   });
 
   // Nunca navegar fuera de la mezcladora (p. ej. al soltar un archivo fuera de un deck)
@@ -111,7 +165,56 @@ function crearVentana() {
     });
   }
 
-  win.on('closed', () => { win = null; });
+  // Si la mezcladora se mueve a otra pantalla, la de video puede tener que cambiar
+  win.on('moved', () => colocarVideo());
+
+  win.on('closed', () => {
+    win = null;
+    if (videoWin && !videoWin.isDestroyed()) videoWin.destroy();
+  });
+}
+
+// ---------- Salida de video en la segunda pantalla ----------
+
+// La pantalla externa es cualquiera donde NO esté la mezcladora (así funciona aunque el proyector sea la "principal")
+function pantallaExterna() {
+  const todas = screen.getAllDisplays();
+  if (todas.length < 2) return null;
+  const actual = win && !win.isDestroyed() ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay();
+  return todas.find(d => d.id !== actual.id) || null;
+}
+
+// forzar = volver a colocarla aunque ya esté en esa pantalla (al conectar/desconectar o al pedirlo)
+function colocarVideo(forzar = false) {
+  if (!videoWin || videoWin.isDestroyed()) return;
+  const ext = pantallaExterna();
+  if (!forzar && (ext?.id ?? null) === videoEn) return; // nada cambió: no hacer parpadear el proyector
+  videoEn = ext?.id ?? null;
+  const antes = estadoVideo;
+
+  if (ext) {
+    // Regla: el video solo se ve en la segunda pantalla, a pantalla completa
+    if (videoWin.isFullScreen()) videoWin.setFullScreen(false);
+    // Dos veces: Windows ajusta mal el tamaño al pasar entre pantallas con distinta escala
+    videoWin.setBounds(ext.bounds);
+    videoWin.setBounds(ext.bounds);
+    videoWin.setFullScreen(true);
+    videoWin.showInactive(); // sin quitarle el foco a la mezcladora
+    estadoVideo = {
+      conectada: true,
+      nombre: ext.label || 'Pantalla externa',
+      ancho: Math.round(ext.size.width * ext.scaleFactor),
+      alto: Math.round(ext.size.height * ext.scaleFactor),
+    };
+  } else {
+    // Sin segunda pantalla, la imagen no se muestra en la laptop
+    videoWin.hide();
+    estadoVideo = { conectada: false, nombre: '', ancho: 0, alto: 0 };
+  }
+
+  if (antes.conectada !== estadoVideo.conectada || antes.nombre !== estadoVideo.nombre) {
+    if (win && !win.isDestroyed()) win.webContents.send('video:estado', estadoVideo);
+  }
 }
 
 app.on('window-all-closed', () => app.quit());

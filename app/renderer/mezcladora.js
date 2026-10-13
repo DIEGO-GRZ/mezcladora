@@ -301,44 +301,45 @@ function cycleFade() {
 }
 
 // ---------- Salida de video (segunda pantalla) ----------
-const VIDEO_PAGE = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Salida de video</title>
-<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
-video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity 60ms linear}
-#black{position:absolute;inset:0;background:#000;opacity:0;transition:opacity .4s}
-#hint{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);color:#fffa;font:15px system-ui;background:#0008;padding:8px 14px;border-radius:8px;transition:opacity 1s}
-body.idle{cursor:none}</style></head><body>
-<video id="A" muted autoplay playsinline></video><video id="B" muted autoplay playsinline></video>
-<div id="black"></div><div id="hint">Doble clic para pantalla completa</div>
-document.addEventListener('dblclick',()=>{document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen().catch(()=>{});});
-let t;const wake=()=>{document.body.classList.remove('idle');clearTimeout(t);t=setTimeout(()=>document.body.classList.add('idle'),2000);};
-document.addEventListener('mousemove',wake);wake();
-setTimeout(()=>{document.getElementById('hint').style.opacity=0;},5000);
-<\/script></body></html>`;
+// La ventana de video vive en app/video/. El proceso principal la pone a pantalla completa en la pantalla
+// externa (o la oculta si no hay). Se abre desde aquí para compartir proceso y pasarle la imagen con captureStream().
+const VIDEO_URL = new URL('../video/index.html', location.href).href;
+let videoEstado = { conectada: false, nombre: '' };
 
-async function openVideoWindow() {
-  initAudio();
-  if (vwin && !vwin.closed) { vwin.focus(); return; }
-  vwin = window.open('', 'salidaVideo', 'popup,width=960,height=540');
-  if (!vwin) return toast('Chrome bloqueó la ventana: permite ventanas emergentes para esta página');
-  try { vwin.document.open(); vwin.document.write(VIDEO_PAGE); vwin.document.close(); }
-  catch { vwin.close(); vwin = null; return toast('Abre la mezcladora desde localhost para usar la salida de video'); }
+function abrirVentanaVideo() {
+  if (vwin && !vwin.closed) return;
+  vwin = window.open(VIDEO_URL, '_blank');
+  if (!vwin) toast('No se pudo abrir la ventana de video');
+}
+
+// La página de video avisa cuando está lista; entonces le pasamos la imagen de los decks
+window.addEventListener('message', e => {
+  if (e.origin !== location.origin || e.source !== vwin || e.data !== 'video-listo') return;
   Object.values(decks).forEach(feedVideo);
-  updateVideoOut(); updateVideoBtns();
+  updateVideoOut();
+});
 
-  // Si Chrome permite administrar ventanas, la mandamos sola a la segunda pantalla
+function mostrarEstadoVideo(estado, avisar) {
+  const antes = videoEstado;
+  videoEstado = estado || { conectada: false, nombre: '' };
+  const b = $('#videoBtn');
+  b.textContent = videoEstado.conectada ? `TV: ${videoEstado.nombre}` : 'TV: no conectada';
+  b.title = videoEstado.conectada
+    ? `Video en ${videoEstado.nombre} (${videoEstado.ancho}×${videoEstado.alto}). Clic para volver a colocarlo.`
+    : 'Conecta el proyector o la TV en modo "Extender". Clic para buscarla otra vez.';
+  b.classList.toggle('on', videoEstado.conectada);
+  if (!avisar) return;
+  if (videoEstado.conectada && !antes.conectada) toast(`Pantalla de video conectada: ${videoEstado.nombre}`);
+  else if (!videoEstado.conectada && antes.conectada) toast('Se desconectó la pantalla de video');
+}
+
+async function recolocarVideo() {
+  abrirVentanaVideo();
   try {
-    if ('getScreenDetails' in window) {
-      const sd = await window.getScreenDetails();
-      const ext = sd.screens.length > 1 && (sd.screens.find(s => !s.isPrimary) || sd.screens.find(s => s !== sd.currentScreen));
-      if (ext) {
-        vwin.moveTo(ext.availLeft, ext.availTop);
-        vwin.resizeTo(ext.availWidth, ext.availHeight);
-        return toast('Video enviado a la segunda pantalla: dale doble clic para pantalla completa');
-      }
-      return toast('No detecto segunda pantalla. Conéctala y vuelve a abrir la ventana de video');
-    }
-  } catch {}
-  toast('Arrastra la ventana de video a tu segunda pantalla y dale doble clic para pantalla completa');
+    const estado = await window.mezcladora.video.recolocar();
+    mostrarEstadoVideo(estado, false);
+    toast(estado.conectada ? `Video en ${estado.nombre}` : 'No detecto segunda pantalla. Conéctala en modo "Extender" (Windows + P)');
+  } catch { toast('No se pudo colocar la ventana de video'); }
 }
 
 function feedVideo(d) {
@@ -372,7 +373,6 @@ function toggleBlackout() {
   updateVideoOut();
   toast(state.blackout ? 'Pantalla de video en negro' : 'Pantalla de video visible');
 }
-function updateVideoBtns() { $('#videoBtn').classList.toggle('on', !!vwin && !vwin.closed); }
 
 // ---------- Salidas de audio ----------
 function fillSelect(sel, outs, saved) {
@@ -446,9 +446,8 @@ $('#fade').addEventListener('change', e => { state.fade = Number(e.target.value)
 $('#stopOld').checked = state.stopOld;
 $('#stopOld').addEventListener('change', e => { state.stopOld = e.target.checked; store.set('cfg:stopOld', state.stopOld); });
 $('#detect').addEventListener('click', () => { initAudio(); detectDevices(true); });
-$('#videoBtn').addEventListener('click', openVideoWindow);
+$('#videoBtn').addEventListener('click', recolocarVideo);
 $('#blackBtn').addEventListener('click', toggleBlackout);
-window.addEventListener('pagehide', () => { if (vwin && !vwin.closed) vwin.close(); });
 ['outMaster', 'outCue'].forEach(id => $('#' + id).addEventListener('change', e => {
   store.set('cfg:' + id, e.target.value); initAudio(); applyOutputs();
 }));
@@ -468,7 +467,7 @@ window.addEventListener('beforeunload', e => {
 });
 
 function render() {
-  if (vwin && vwin.closed) { vwin = null; updateVideoBtns(); }
+  if (vwin && vwin.closed) { vwin = null; abrirVentanaVideo(); } // no debería cerrarse: si pasa, se reabre
   for (const d of Object.values(decks)) {
     const a = d.audio, dur = a.duration, ok = isFinite(dur) && dur > 0;
     d.ui.fill.style.width = `${ok ? (a.currentTime / dur) * 100 : 0}%`;
@@ -480,4 +479,7 @@ function render() {
 }
 updateOnAir();
 detectDevices(false);
+abrirVentanaVideo();
+window.mezcladora.video.alCambiar(e => mostrarEstadoVideo(e, true));
+window.mezcladora.video.estado().then(e => mostrarEstadoVideo(e, false)).catch(() => mostrarEstadoVideo(null, false));
 render();

@@ -1,12 +1,23 @@
 'use strict';
 // Puente seguro entre la interfaz y el proceso principal.
-// Por ahora solo expone datos de la app; el acceso a disco (biblioteca, archivos) llegará por IPC en los siguientes pasos.
-const { contextBridge } = require('electron');
+// El acceso a disco (biblioteca, archivos) llegará por IPC en los siguientes pasos.
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('mezcladora', {
   plataforma: process.platform,
   versiones: {
     electron: process.versions.electron,
     chrome: process.versions.chrome,
+  },
+  video: {
+    // { conectada, nombre, ancho, alto } de la pantalla externa
+    estado: () => ipcRenderer.invoke('video:estado'),
+    // Vuelve a buscar la pantalla externa y coloca ahí la ventana de video
+    recolocar: () => ipcRenderer.invoke('video:recolocar'),
+    alCambiar: cb => {
+      const f = (_e, estado) => cb(estado);
+      ipcRenderer.on('video:estado', f);
+      return () => ipcRenderer.removeListener('video:estado', f);
+    },
   },
 });
