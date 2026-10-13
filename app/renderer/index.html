@@ -137,8 +137,21 @@
     <h3>Transiciones</h3>
     <label class="check"><input type="checkbox" id="stopOld"> Pausar la canción anterior al terminar la transición</label>
     <h3>Teclas</h3>
-    <p class="muted small">Distribución actual: <b id="cfgPreset"></b>. La pantalla para cambiar teclas llega en el siguiente paso.</p>
-    <p class="muted small">Las teclas siguen funcionando con esta ventana abierta. <kbd>Esc</kbd> siempre es Pánico.</p>
+    <div class="tecTop">
+      <span class="muted small">Distribución</span>
+      <div class="seg" id="tecPresets"></div>
+      <button class="btn sm" id="tecRestaurar">Restaurar</button>
+      <span class="muted small" id="tecEstado"></span>
+    </div>
+    <p class="muted small">Clic en una tecla y presiona la nueva. Lo que dice "⇧" se hace con Shift + la misma tecla y se mueve junto con ella.
+      Las teclas de la mezcladora siguen funcionando con esta ventana abierta. <kbd>Esc</kbd> siempre es Pánico.</p>
+    <div class="tecMsg" id="tecMsg" hidden></div>
+    <div class="tecDecks">
+      <div><div class="lbl tecH ca">Deck A</div><div id="tecA"></div></div>
+      <div><div class="lbl tecH cb">Deck B</div><div id="tecB"></div></div>
+    </div>
+    <div class="lbl tecH">Generales</div>
+    <div id="tecG" class="tecCols"></div>
   </div>
 </div>
 
@@ -147,5 +160,6 @@
 
 <script src="teclas.js"></script>
 <script src="mezcladora.js"></script>
+<script src="configuracion.js"></script>
 </body>
 </html>

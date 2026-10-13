@@ -217,3 +217,27 @@ select{background:var(--bg);color:var(--text);border:1px solid var(--line);borde
   .vidPreview{height:56px}
   .lib td{padding:4px 8px}
 }
+
+/* ---------- Configuración: teclas ---------- */
+.modalBox{width:min(900px,100%)}
+.tecTop{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.seg{display:flex;gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:3px}
+.seg button{font:600 12px var(--sans);color:var(--text);background:transparent;border:0;border-radius:6px;padding:5px 10px;cursor:pointer}
+.seg button.on{background:var(--text);color:var(--bg)}
+.tecMsg{border:1px solid var(--warn);color:var(--warn);background:#F5B94214;border-radius:8px;padding:8px 12px;font-size:13px;margin:8px 0;line-height:28px}
+.tecMsg.err{border-color:var(--panic);color:#FF8A8E;background:#E5484D14}
+.tecMsg.info{border-color:var(--line2);color:var(--soft);background:transparent}
+.tecMsg .btn{display:inline-flex;min-height:28px;margin-left:8px;vertical-align:middle}
+.tecDecks{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.tecCols{display:grid;grid-template-columns:1fr 1fr;column-gap:16px}
+.tecH{margin:12px 0 4px}
+.tecH.ca{color:var(--a)} .tecH.cb{color:var(--b)}
+.tecRow{display:flex;align-items:center;gap:8px;padding:3px 0;border-bottom:1px solid var(--ctrl);min-height:34px}
+.tecName{flex:1;min-width:0;font-size:13px}
+.tecName small{display:block;color:var(--muted);font-size:11px}
+.tecRow.pend .tecName{color:var(--muted)}
+.pendTag{font-size:10px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px;white-space:nowrap}
+.tecKey{font:500 12px var(--mono);min-width:64px;padding:5px 8px;border-radius:6px;border:1px solid var(--line2);background:var(--bg);color:var(--text);cursor:pointer;text-align:center}
+.tecKey:hover{border-color:var(--text)}
+.tecKey.capt{border-color:var(--warn);color:var(--warn);animation:blink 1s infinite}
+.tecKey.cambiada{border-color:var(--a)}

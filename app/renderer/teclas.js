@@ -177,15 +177,103 @@ const Teclas = (() => {
     });
   }
 
+  // ---------- Parejas con Shift ----------
+  // La acción con Shift va siempre en la misma tecla que su base: al mover la base, se mueve también
+  const PARES = {
+    mark: 'clearMark', stemVoz: 'acapella', stemMel: 'instru', stemBajo: 'kick', stemBat: 'hihat',
+    cue1: 'saveCue1', cue2: 'saveCue2', cue3: 'saveCue3', cue4: 'saveCue4',
+    trans: 'cut', xfLeft: 'xfLeftBig', xfRight: 'xfRightBig', loadA: 'loadB',
+  };
+  const ES_PAREJA = new Set(Object.values(PARES));
+  const parDe = clave => {
+    const a = PORCLAVE[clave];
+    const p = a && PARES[a.id];
+    return p ? (a.deck ? `${a.deck}.${p}` : p) : null;
+  };
+  // Acciones que se muestran en la pantalla de teclas (las parejas van en la misma fila que su base)
+  const EDITABLES = ACCIONES.filter(a => !ES_PAREJA.has(a.id));
+
+  // ---------- Validación ----------
+  // Prohibidas: Esc (Pánico), modificadores, teclas de estado y F12 (herramientas de desarrollo)
+  const PROHIBIDAS = /^(Escape|Tab|CapsLock|NumLock|ScrollLock|Shift|Control|Alt|Meta|OS|ContextMenu|PrintScreen|Pause|F12|Fn)/;
+  // Devuelve null si se puede usar, o el motivo si no
+  function motivoNoValida(e) {
+    if (e.code === 'Escape') return 'Esc siempre es Pánico';
+    if (e.ctrlKey || e.altKey || e.metaKey) return 'Sin Ctrl ni Alt: usa una tecla sola (o con Shift)';
+    if (!e.code || PROHIBIDAS.test(e.code)) return 'Esa tecla no se puede usar';
+    if (e.key === 'Dead') return 'Esa es una tecla de acento: elige otra';
+    return null;
+  }
+  const esModificador = e => /^(Shift|Control|Alt|Meta|OS)/.test(e.code);
+
+  // ---------- Asignar ----------
+  const igual = (x, y) => x && y && x.code === y.code && !!x.shift === !!y.shift;
+  // Asigna { code, shift } a una acción. Si la tecla está ocupada devuelve { conflictos } sin cambiar nada,
+  // salvo que intercambiar = true: entonces la otra acción se queda con la tecla vieja.
+  function asignar(clave, tecla, intercambiar = false) {
+    const par = parDe(clave);
+    // Las acciones con pareja usan la tecla sola; Shift + esa tecla queda para la pareja
+    const nueva = { code: tecla.code, shift: par ? false : !!tecla.shift };
+    const objetivos = [[clave, nueva]];
+    if (par) objetivos.push([par, { code: nueva.code, shift: true }]);
+    const propias = new Set(objetivos.map(o => o[0]));
+
+    const conflictos = [];
+    for (const [obj, nb] of objetivos) {
+      for (const [otra, t] of Object.entries(mapa)) {
+        if (!propias.has(otra) && igual(t, nb)) conflictos.push({ clave: otra, de: obj });
+      }
+    }
+    if (conflictos.length && !intercambiar) {
+      return { conflictos: conflictos.map(c => ({ ...c, nombre: nombreCompleto(c.clave) })) };
+    }
+    // Una pareja con Shift se mueve junto con su base. Si su base no se está moviendo, no se puede quitar sola.
+    const seMueveConBase = c => conflictos.some(o => parDe(o.clave) === c.clave);
+    const pareja = conflictos.find(c => ES_PAREJA.has(PORCLAVE[c.clave].id) && !seMueveConBase(c));
+    if (pareja) return { error: `${etiqueta(pareja.clave)} es "${nombreCompleto(pareja.clave)}". Cambia primero su tecla base.` };
+
+    const nuevos = { ...cambios };
+    for (const c of conflictos) {
+      if (ES_PAREJA.has(PORCLAVE[c.clave].id)) continue; // ya la mueve su base
+      // La otra acción toma la tecla que tenía la nuestra (y su pareja, si la tiene)
+      const vieja = mapa[c.de];
+      const parOtra = parDe(c.clave);
+      nuevos[c.clave] = { code: vieja.code, shift: parOtra ? false : !!vieja.shift };
+      if (parOtra) nuevos[parOtra] = { code: vieja.code, shift: true };
+    }
+    for (const [obj, nb] of objetivos) nuevos[obj] = nb;
+
+    // Protección: nunca dejar dos acciones en la misma tecla
+    const prueba = { ...PRESETS[presetActual].mapa };
+    for (const [c, t] of Object.entries(nuevos)) prueba[c] = t;
+    const vistas = new Map();
+    for (const [c, t] of Object.entries(prueba)) {
+      const i = idx(t);
+      if (vistas.has(i)) return { error: `No se puede intercambiar sin repetir ${t.shift ? '⇧' : ''}${nombreCode(t.code)}. Cambia primero "${nombreCompleto(vistas.get(i))}".` };
+      vistas.set(i, c);
+    }
+    aplicar(presetActual, nuevos);
+    guardar();
+    return { ok: true };
+  }
+
+  function nombreCompleto(clave) {
+    const a = PORCLAVE[clave];
+    return a ? `${a.nombre}${a.deck ? ` (deck ${a.deck})` : ''}` : clave;
+  }
+
   cargar();
 
   return {
-    ACCIONES, PORCLAVE, PRESETS,
+    ACCIONES, PORCLAVE, PRESETS, EDITABLES,
     accionDe, etiqueta, pintar, leerDistribucion,
+    parDe, motivoNoValida, esModificador, asignar, nombreCompleto,
     get preset() { return presetActual; },
-    // Para la pantalla de configuración (siguiente paso)
+    get personalizada() { return Object.keys(cambios).length > 0; },
+    // true si la tecla de esa acción es distinta a la de la distribución elegida
+    esCambiada: clave => !igual(mapa[clave], PRESETS[presetActual].mapa[clave]),
     mapa: () => ({ ...mapa }),
+    // Cambiar de distribución o restaurar la actual borra los cambios sueltos
     usarPreset(p) { if (PRESETS[p]) { aplicar(p, {}); guardar(); } },
-    cambiar(clave, tecla) { aplicar(presetActual, { ...cambios, [clave]: tecla }); guardar(); },
   };
 })();

@@ -647,7 +647,7 @@ function panic() {
 // ---------- Configuración ----------
 function abrirConfig(abrir = $('#cfg').hidden) {
   $('#cfg').hidden = !abrir;
-  if (abrir) $('#cfgPreset').textContent = Teclas.PRESETS[Teclas.preset].nombre;
+  document.dispatchEvent(new Event(abrir ? 'config:abierta' : 'config:cerrada'));
 }
 
 // ---------- Teclado ----------
