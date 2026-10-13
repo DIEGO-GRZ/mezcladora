@@ -65,9 +65,27 @@ Se arranca con `npm start`. Lo que ya existe en `app/`:
 - Tipografías (Google Fonts, empaquetarlas localmente en Electron): Barlow (texto), Barlow Condensed (etiquetas y títulos), JetBrains Mono (BPM, tiempos, teclas).
 - Cada botón muestra su tecla en una etiqueta tipo tecla. Tono en notación Camelot, en verde si es compatible con el deck al aire. Resolución de video en amarillo si es menor a 720p.
 
-### Teclas (versión del diseño; reemplazan a las del prototipo)
+### Teclas
 
-Teclado latinoamericano. Usar `e.code`.
+**Son configurables** (Diego es zurdo: con la derecha usa el mouse, la transición y el crossfader). Todas salen de `app/renderer/teclas.js`; los botones muestran la tecla elegida (`<kbd data-tecla="...">`). Hay dos distribuciones y encima se pueden cambiar teclas sueltas. **Esc siempre es Pánico** y no se puede reasignar.
+
+**Distribución zurda (la predeterminada):** lo más usado de los dos decks con la mano izquierda.
+
+| Acción | Deck A | Deck B |
+| --- | --- | --- |
+| Play / pausa | Q | A |
+| Pre-escucha en audífonos | W | S |
+| Ir al inicio marcado | E | D |
+| Marcar inicio (Shift = borrar) | R | F |
+| −5 s / +5 s | Z / X | C / V |
+| Loop de 4 tiempos / Sync | M / , | . / - |
+| Efecto | G | H |
+| Stems Voz / Melodía / Bajo / Batería (Shift = Acapella / Instrumental / Kick / HiHat) | U I O P | J K L Ñ |
+| Hot cues 1-4 (Shift = guardar) | 1 2 3 4 | 7 8 9 0 |
+
+Globales iguales en las dos distribuciones (ver abajo), más F10 = configuración.
+
+**Distribución del diseño (diestra).** Teclado latinoamericano. Usar `e.code`.
 
 | Acción | Deck A | Deck B |
 | --- | --- | --- |

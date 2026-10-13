@@ -1,12 +1,7 @@
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
 
-// ---------- Teclas (por posición física, funciona con teclado en español) ----------
-const KEYS = {
-  A: { play: 'Q', cue: 'W', mark: 'E', tomark: 'R', back: 'A', fwd: 'S', load: '1' },
-  B: { play: 'U', cue: 'I', mark: 'O', tomark: 'P', back: 'J', fwd: 'K', load: '2' }
-};
-const REPEATABLE = new Set(['back', 'fwd']);
+// Las teclas están en teclas.js (configurables; por defecto distribución zurda)
 
 // ---------- Almacenamiento seguro ----------
 const store = {
@@ -17,7 +12,7 @@ const store = {
 
 const state = { xf: 0, fade: store.get('cfg:fade', 8), stopOld: store.get('cfg:stopOld', true), trans: null, blackout: false };
 const decks = {};
-let ctx = null, masterGain, cueBus, cueAudio, masterAudio = null;
+let ctx = null, masterGain, masterOut, masterAnalyser, cueBus, cueAudio, masterAudio = null;
 let vwin = null; // ventana de salida de video (segunda pantalla)
 const AUDIO_EXT = /\.(mp3|wav|ogg|oga|m4a|aac|flac|opus)$/i;
 const VIDEO_EXT = /\.(mp4|m4v|webm|mov|mkv|ogv)$/i;
@@ -38,6 +33,10 @@ function initAudio() {
   if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
   ctx = new AudioContext({ latencyHint: 'interactive' });
   masterGain = ctx.createGain();
+  masterOut = ctx.createGain(); // solo la usa el pánico
+  masterAnalyser = ctx.createAnalyser(); masterAnalyser.fftSize = 1024;
+  masterGain.connect(masterOut);
+  masterOut.connect(masterAnalyser);
   cueBus = ctx.createGain();
 
   // Audífonos: bus independiente enviado a su propia salida
@@ -47,17 +46,16 @@ function initAudio() {
 
   // Principal: directo si el navegador permite elegir salida del contexto
   if (typeof ctx.setSinkId === 'function') {
-    masterGain.connect(ctx.destination);
+    masterOut.connect(ctx.destination);
   } else {
     const md = ctx.createMediaStreamDestination();
-    masterGain.connect(md);
+    masterOut.connect(md);
     masterAudio = new Audio(); masterAudio.srcObject = md.stream; masterAudio.play().catch(() => {});
   }
 
   Object.values(decks).forEach(connectDeck);
   applyCrossfader();
   applyOutputs();
-  const st = $('#status'); st.textContent = 'Audio activo'; st.classList.add('ok');
 }
 
 function connectDeck(d) {
@@ -66,6 +64,8 @@ function connectDeck(d) {
   d.xfGain = ctx.createGain(); d.xfGain.gain.value = deckLevel(d);
   d.cueGain = ctx.createGain(); d.cueGain.gain.value = d.cue ? 1 : 0;
   d.src.connect(d.volGain).connect(d.xfGain).connect(masterGain);
+  d.analyser = ctx.createAnalyser(); d.analyser.fftSize = 1024;
+  d.volGain.connect(d.analyser); // medidor del deck: después del volumen, antes del crossfader
   d.src.connect(d.cueGain).connect(cueBus); // pre-escucha antes del volumen: se oye aunque el fader esté abajo
 }
 
@@ -76,37 +76,76 @@ function holdParam(p) {
 }
 
 // ---------- Decks ----------
-function deckHTML(id, k) {
+// Botón de deck. pend = etapa en la que llega la función (se ve desactivado hasta entonces).
+const bot = (id, act, txt, pend) =>
+  `<button class="btn" data-act="${act}"${pend ? ` disabled data-pend="${pend}"` : ''}><span>${txt}</span> <kbd data-tecla="${id}.${act}"></kbd></button>`;
+
+function deckHTML(id) {
   return `
-  <h2>DECK ${id}<span class="badge"></span></h2>
-  <div class="title">Sin canción</div>
-  <div class="drop">Arrastra una canción o video, o haz clic <kbd>${k.load}</kbd></div>
-  <input type="file" accept="audio/*,video/*,.mkv,.mov" hidden>
-  <div class="bar"><div class="fill"></div><div class="mark"></div></div>
-  <div class="times"><span class="cur">0:00</span><span class="rem">-0:00</span></div>
-  <div class="btns">
-    <button data-act="play"><span class="lbl">▶ Play</span><kbd>${k.play}</kbd></button>
-    <button data-act="cue">Audífonos <kbd>${k.cue}</kbd></button>
-    <button data-act="mark">Marcar inicio <kbd>${k.mark}</kbd></button>
-    <button data-act="tomark">Ir al inicio <kbd>${k.tomark}</kbd></button>
-    <button data-act="back">−5 s <kbd>${k.back}</kbd></button>
-    <button data-act="fwd">+5 s <kbd>${k.fwd}</kbd></button>
+  <div class="dHead">
+    <div class="dInfo">
+      <div class="dTags"><span class="dId">${id}</span><span class="dState"></span><span class="tag tipo"></span><span class="tag ok stemsTag"></span></div>
+      <div class="title">Sin canción</div>
+      <div class="sub"></div>
+    </div>
+    <div class="dBpm" title="BPM y tono llegan con el análisis (etapa 3)">
+      <div class="bpm na">—</div>
+      <div class="bpmRow"><span class="lbl">BPM</span><span class="keyTag">—</span></div>
+    </div>
   </div>
-  <label class="row">Volumen <input type="range" class="vol" min="0" max="100" value="100"></label>
-  <div class="markinfo"></div>`;
+  <div class="drop">Arrastra una canción o video aquí, o haz clic para elegir un archivo</div>
+  <input type="file" accept="audio/*,video/*,.mkv,.mov" hidden>
+  <div>
+    <div class="bar"><div class="fill"></div><div class="mark"></div><div class="head"></div></div>
+    <div class="times">
+      <span><span class="mono cur">0:00</span> transcurrido</span>
+      <span class="legend"><span class="y">▮</span> inicio · <span class="o">▮</span> salida</span>
+      <span><span class="mono rem">-0:00</span> restante</span>
+    </div>
+    <div class="markinfo"></div>
+  </div>
+  <div class="grid4 btns">
+    ${bot(id, 'play', '▶ Play')}${bot(id, 'cue', 'Audífonos')}${bot(id, 'mark', 'Marcar')}${bot(id, 'tomark', 'Al inicio')}
+    ${bot(id, 'back', '−5 s')}${bot(id, 'fwd', '+5 s')}${bot(id, 'loop', 'Loop 4', 4)}${bot(id, 'sync', 'Sync', 3)}
+  </div>
+  <div>
+    <div class="lbl mb6">Stems</div>
+    <div class="grid4 stems">
+      ${bot(id, 'stemVoz', 'Voz', 2)}${bot(id, 'stemMel', 'Melodía', 2)}${bot(id, 'stemBajo', 'Bajo', 2)}${bot(id, 'stemBat', 'Batería', 2)}
+      ${bot(id, 'acapella', 'Acapella', 2)}${bot(id, 'instru', 'Instrumental', 2)}${bot(id, 'kick', 'Kick', 2)}${bot(id, 'hihat', 'HiHat', 2)}
+    </div>
+  </div>
+  <div class="cuesFx">
+    <div>
+      <div class="lbl mb6">Hot cues <span class="norm">(⇧ = guardar)</span></div>
+      <div class="grid4">${[1, 2, 3, 4].map(n => bot(id, `cue${n}`, '—', 4)).join('')}</div>
+    </div>
+    <div>
+      <div class="lbl mb6">Efecto</div>
+      ${bot(id, 'fx', 'Eco ▾', 5)}
+    </div>
+  </div>`;
+}
+
+const KNOBS = ['Ganancia', 'Voz', 'Graves', 'Filtro'];
+function knobsHTML() {
+  return KNOBS.map(k => `<div class="knob" title="Llega en la etapa 4"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="16" fill="#1C2027" stroke="#2A2F38" stroke-width="2"/><line x1="20" y1="20" x2="20" y2="7" stroke="var(--c)" stroke-width="3" stroke-linecap="round"/></svg><span class="lbl">${k}</span></div>`).join('');
 }
 
 function createDeck(id) {
   const el = $(`.deck[data-deck="${id}"]`);
-  el.innerHTML = deckHTML(id, KEYS[id]);
+  el.innerHTML = deckHTML(id);
+  $(`.knobs[data-deck="${id}"]`).innerHTML = knobsHTML();
   // Un <video> reproduce tanto audio como video; vive oculto y su imagen se envía a la segunda pantalla
   const audio = document.createElement('video');
   audio.preload = 'auto';
   audio.playsInline = true;
   audio.preservesPitch = true;
   $('#mediaPool').appendChild(audio);
+  const fcol = $(`.fcol[data-deck="${id}"]`);
   const d = { id, el, audio, file: null, key: null, url: null, mark: null, cue: false, vol: 1, loadId: 0, isVideo: false,
-    ui: { fill: $('.fill', el), cur: $('.cur', el), rem: $('.rem', el), play: $('[data-act=play] .lbl', el) } };
+    ui: { fill: $('.fill', el), head: $('.bar .head', el), cur: $('.cur', el), rem: $('.rem', el), play: $('[data-act=play] span', el),
+      state: $('.dState', el), wave: $(`.waveRow[data-deck="${id}"] .wfill`), vu: $('.vufill', fcol) } };
   decks[id] = d;
 
   const input = $('input[type=file]', el), drop = $('.drop', el);
@@ -115,14 +154,22 @@ function createDeck(id) {
   el.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
   el.addEventListener('dragleave', e => { if (!el.contains(e.relatedTarget)) drop.classList.remove('over'); });
   el.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) loadFile(d, f); });
-  $('.btns', el).addEventListener('click', e => { const b = e.target.closest('button'); if (b) deckAction(d, b.dataset.act, e.shiftKey); });
+  // Clic en botones del deck y en el botón de audífonos del mixer (Shift+clic en Marcar = borrar)
+  const alClic = e => {
+    const b = e.target.closest('button[data-act]');
+    if (!b || b.disabled) return;
+    const act = b.dataset.act === 'mark' && e.shiftKey ? 'clearMark' : b.dataset.act;
+    deckAction(d, act);
+  };
+  el.addEventListener('click', alClic);
+  $('.headBtn', fcol).addEventListener('click', alClic);
   $('.bar', el).addEventListener('click', e => {
     if (!d.file || !isFinite(audio.duration)) return;
     const r = e.currentTarget.getBoundingClientRect();
     audio.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * audio.duration;
   });
-  $('.vol', el).addEventListener('input', e => setVol(d, e.target.value / 100));
-  ['play', 'pause', 'ended'].forEach(ev => audio.addEventListener(ev, () => updatePlayBtn(d)));
+  $('.vol', fcol).addEventListener('input', e => setVol(d, e.target.value / 100));
+  ['play', 'pause', 'ended'].forEach(ev => audio.addEventListener(ev, () => { updatePlayBtn(d); renderDeckState(d); }));
   audio.addEventListener('durationchange', () => renderMark(d));
   audio.addEventListener('loadeddata', () => {
     d.isVideo = audio.videoWidth > 0; // confirma si el archivo realmente trae imagen
@@ -144,7 +191,8 @@ function loadFile(d, file) {
 // Carga una canción de la biblioteca (se sirve desde app://mezcladora/medio/<id>)
 function loadTrack(d, c) {
   if (!c || c.falta) { toast('Ese archivo ya no está en su carpeta'); return false; }
-  return cargarEnDeck(d, { name: c.nombre, size: c.tamano, url: `/medio/${c.id}`, isVideo: c.tipo === 'video', libId: c.id });
+  return cargarEnDeck(d, { name: c.nombre, size: c.tamano, url: `/medio/${c.id}`, isVideo: c.tipo === 'video', libId: c.id,
+    carpeta: c.carpeta.split(/[\\/]/).pop() });
 }
 
 // m = { name, size, url, isVideo, blob?, libId? }. La marca de inicio se guarda por nombre|tamaño, venga de donde venga.
@@ -171,26 +219,42 @@ function cargarEnDeck(d, m) {
   const t = $('.title', d.el);
   t.textContent = file.name.replace(/\.[^.]+$/, '');
   t.title = file.name;
-  renderMark(d); updatePlayBtn(d); renderBadge(d);
+  $('.sub', d.el).textContent = m.carpeta || '';
+  d.el.classList.add('loaded');
+  renderMark(d); updatePlayBtn(d); renderBadge(d); renderDeckState(d);
   return true;
 }
 function renderBadge(d) {
-  const b = $('.badge', d.el);
-  b.textContent = d.file ? (d.isVideo ? 'VIDEO' : 'AUDIO') : '';
-  b.classList.toggle('video', d.isVideo);
+  const b = $('.tipo', d.el), h = d.audio.videoHeight;
+  b.textContent = !d.file ? '' : d.isVideo ? (h ? `VIDEO ${h}p` : 'VIDEO') : 'AUDIO';
+  b.classList.toggle('warn', d.isVideo && h > 0 && h < 720); // se verá borroso en el proyector
+}
+// AL AIRE / EN AUDÍFONOS junto a la letra del deck
+function renderDeckState(d) {
+  const s = d.ui.state;
+  if (isOnAir(d)) { s.textContent = 'AL AIRE'; s.className = 'dState air'; }
+  else if (d.cue) { s.textContent = 'EN AUDÍFONOS'; s.className = 'dState head'; }
+  else { s.textContent = ''; s.className = 'dState'; }
 }
 
-function deckAction(d, act, shift) {
+function deckAction(d, act) {
   initAudio();
   switch (act) {
-    case 'load': $('input[type=file]', d.el).click(); break;
     case 'play': togglePlay(d); break;
     case 'cue': toggleCue(d); break;
-    case 'mark': shift ? clearMark(d) : setMark(d); break;
+    case 'mark': setMark(d); break;
+    case 'clearMark': clearMark(d); break;
     case 'tomark': if (needTrack(d)) d.audio.currentTime = d.mark ?? 0; break;
     case 'back': if (needTrack(d)) d.audio.currentTime = Math.max(0, d.audio.currentTime - 5); break;
     case 'fwd': if (needTrack(d)) d.audio.currentTime = Math.min(d.audio.duration || 0, d.audio.currentTime + 5); break;
+    default: avisoPendiente(`${d.id}.${act}`);
   }
+}
+
+// Tecla de una función que todavía no existe: avisa en qué etapa llega, sin hacer nada más
+function avisoPendiente(clave) {
+  const a = Teclas.PORCLAVE[clave];
+  if (a?.pend) toast(`${a.deck ? `Deck ${a.deck} · ` : ''}${a.nombre}: llega en la etapa ${a.pend}`);
 }
 
 function togglePlay(d) {
@@ -205,6 +269,8 @@ function toggleCue(d) {
   d.cue = !d.cue;
   if (d.cueGain) d.cueGain.gain.setTargetAtTime(d.cue ? 1 : 0, ctx.currentTime, 0.01);
   $('[data-act=cue]', d.el).classList.toggle('on', d.cue);
+  $(`.headBtn[data-deck="${d.id}"]`).classList.toggle('on', d.cue);
+  renderDeckState(d);
   if (d.cue && $('#outCue').value === $('#outMaster').value)
     toast('Ojo: audífonos y bocinas usan la misma salida; la pre-escucha se oirá en las bocinas');
 }
@@ -230,10 +296,10 @@ function renderMark(d) {
   const m = $('.mark', d.el), info = $('.markinfo', d.el), dur = d.audio.duration;
   if (d.mark != null && isFinite(dur) && dur > 0) {
     m.style.display = 'block'; m.style.left = `${(d.mark / dur) * 100}%`;
-    info.textContent = `Empieza en ${fmt(d.mark)} · Shift+${KEYS[d.id].mark} para borrar`;
+    info.textContent = `Empieza en ${fmt(d.mark)} · ${Teclas.etiqueta(`${d.id}.clearMark`)} para borrar`;
   } else {
     m.style.display = 'none';
-    info.textContent = d.file ? `Sin marca: presiona ${KEYS[d.id].mark} donde quieras que empiece` : '';
+    info.textContent = d.file ? `Sin marca: presiona ${Teclas.etiqueta(`${d.id}.mark`)} donde quieras que empiece` : '';
   }
 }
 function updatePlayBtn(d) {
@@ -255,9 +321,15 @@ function applyCrossfader() {
 }
 function updateOnAir() {
   const a = deckLevel(decks.A) > 0.3, b = deckLevel(decks.B) > 0.3;
-  $('#onair').textContent = `Al aire: ${a && b ? 'A + B' : a ? 'A' : 'B'}`;
+  const txt = a && b ? 'A + B' : a ? 'A' : 'B';
+  $('#onair').textContent = `Al aire: ${txt}`;
   decks.A.el.classList.toggle('live', a);
   decks.B.el.classList.toggle('live', b);
+  Object.values(decks).forEach(renderDeckState);
+  if (!state.trans) $('#autoTxt').textContent = state.xf < 0.5 ? 'TRANSICIÓN A → B' : 'TRANSICIÓN B → A';
+  const vs = $('#vidShows'), va = decks.A.isVideo && a, vb = decks.B.isVideo && b;
+  vs.textContent = state.blackout ? 'En negro' : va || vb ? `Muestra deck ${va && vb ? 'A + B' : va ? 'A' : 'B'}` : 'Sin video';
+  vs.classList.toggle('ok', !state.blackout && (va || vb));
   updateVideoOut();
 }
 
@@ -308,13 +380,13 @@ function cancelTransition() {
 }
 function finishOld(from) { if (state.stopOld && !from.audio.paused) from.audio.pause(); }
 function setTransUI(on) {
-  const b = $('#autoBtn'); b.classList.toggle('on', on);
-  b.firstChild.textContent = on ? 'Mezclando… ' : 'Transición ';
+  $('#autoBtn').classList.toggle('mixing', on);
+  if (on) $('#autoTxt').textContent = 'MEZCLANDO…'; else updateOnAir();
 }
 function cycleFade() {
   const opts = [4, 8, 16, 32];
   state.fade = opts[(opts.indexOf(state.fade) + 1) % opts.length];
-  $('#fade').value = state.fade; store.set('cfg:fade', state.fade);
+  $('#fadeTxt').textContent = `${state.fade} s`; store.set('cfg:fade', state.fade);
   toast(`Duración de transición: ${state.fade} s`);
 }
 
@@ -340,12 +412,12 @@ window.addEventListener('message', e => {
 function mostrarEstadoVideo(estado, avisar) {
   const antes = videoEstado;
   videoEstado = estado || { conectada: false, nombre: '' };
-  const b = $('#videoBtn');
-  b.textContent = videoEstado.conectada ? `TV: ${videoEstado.nombre}` : 'TV: no conectada';
+  const b = $('#chipTV');
+  $('span', b).textContent = videoEstado.conectada ? `TV · ${videoEstado.nombre}` : 'TV';
   b.title = videoEstado.conectada
     ? `Video en ${videoEstado.nombre} (${videoEstado.ancho}×${videoEstado.alto}). Clic para volver a colocarlo.`
-    : 'Conecta el proyector o la TV en modo "Extender". Clic para buscarla otra vez.';
-  b.classList.toggle('on', videoEstado.conectada);
+    : 'TV no conectada. Conecta el proyector o la TV en modo "Extender" (Windows + P). Clic para buscarla otra vez.';
+  b.classList.toggle('ok', videoEstado.conectada);
   if (!avisar) return;
   if (videoEstado.conectada && !antes.conectada) toast(`Pantalla de video conectada: ${videoEstado.nombre}`);
   else if (!videoEstado.conectada && antes.conectada) toast('Se desconectó la pantalla de video');
@@ -388,7 +460,7 @@ function updateVideoOut() {
 function toggleBlackout() {
   state.blackout = !state.blackout;
   $('#blackBtn').classList.toggle('on', state.blackout);
-  updateVideoOut();
+  updateOnAir();
   toast(state.blackout ? 'Pantalla de video en negro' : 'Pantalla de video visible');
 }
 
@@ -411,9 +483,33 @@ async function detectDevices(askPermission, fromChange) {
   const lostM = fillSelect($('#outMaster'), outs, store.get('cfg:outMaster', 'default'));
   const lostC = fillSelect($('#outCue'), outs, store.get('cfg:outCue', 'default'));
   if (fromChange && (lostM || lostC)) toast('Se desconectó un dispositivo de audio; usando la salida predeterminada');
+  renderChipsSalida(fromChange && lostM, fromChange && lostC);
   if (askPermission) toast(`Encontré ${$('#outMaster').options.length - 1} salidas de audio`);
   applyOutputs();
 }
+// Bocinas / Audífonos en la barra superior: verde = elegida, amarillo = predeterminada o compartida, rojo = se desconectó
+const salidasPerdidas = { m: false, c: false };
+function renderChipsSalida(perdioM, perdioC) {
+  if (perdioM) salidasPerdidas.m = true;
+  if (perdioC) salidasPerdidas.c = true;
+  const m = $('#outMaster'), c = $('#outCue');
+  const nombre = sel => sel.options[sel.selectedIndex]?.text || 'Predeterminada';
+  const pinta = (chip, sel, perdida, base) => {
+    const def = sel.value === 'default';
+    $('span', chip).textContent = perdida ? `${base}: desconectada` : def ? base : nombre(sel);
+    chip.title = `${base}: ${def ? 'salida predeterminada de Windows' : nombre(sel)}. Clic para cambiar.`;
+    chip.classList.toggle('ok', !perdida && !def);
+    chip.classList.toggle('warn', !perdida && def);
+    chip.classList.toggle('bad', perdida);
+  };
+  pinta($('#chipMaster'), m, salidasPerdidas.m, 'Bocinas');
+  pinta($('#chipCue'), c, salidasPerdidas.c, 'Audífonos');
+  if (!salidasPerdidas.c && c.value === m.value) {
+    const chip = $('#chipCue'); chip.classList.remove('ok'); chip.classList.add('warn');
+    chip.title = 'Audífonos y bocinas usan la misma salida: la pre-escucha se oirá en las bocinas.';
+  }
+}
+
 async function applyOutputs() {
   if (!ctx) return;
   const id = v => (!v || v === 'default') ? '' : v;
@@ -489,7 +585,7 @@ function renderBiblioteca() {
   }
   tbody.innerHTML = lib.canciones.map((c, i) => `
     <tr data-i="${i}" class="${i === lib.sel ? 'sel' : ''}${c.falta ? ' falta' : ''}">
-      <td class="libName" title="${esc(c.nombre)}">${esc(c.nombre.replace(/\.[^.]+$/, ''))}${c.falta ? ' <span class="badge">NO ENCONTRADO</span>' : ''}</td>
+      <td class="libName" title="${esc(c.nombre)}">${esc(c.nombre.replace(/\.[^.]+$/, ''))}${c.falta ? ' <span class="tag">NO ENCONTRADO</span>' : ''}</td>
       <td>${c.tipo === 'video' ? 'Video' : 'Audio'}</td>
       <td class="num">${c.duracion ? fmt(c.duracion) : ''}</td>
       <td class="num${c.alto && c.alto < 720 ? ' lowres' : ''}">${fmtRes(c)}</td>
@@ -504,8 +600,12 @@ function moverSeleccion(delta) {
   $(`#libRows tr[data-i="${lib.sel}"]`)?.classList.remove('sel');
   lib.sel = Math.max(0, Math.min(n - 1, lib.sel + delta));
   const fila = $(`#libRows tr[data-i="${lib.sel}"]`);
-  fila?.classList.add('sel');
-  fila?.scrollIntoView({ block: 'nearest' });
+  if (!fila) return;
+  fila.classList.add('sel');
+  // Desplaza solo la lista (scrollIntoView movería la página entera y los decks saldrían de la vista)
+  const wrap = $('.libWrap'), cab = $('.lib thead').offsetHeight;
+  if (fila.offsetTop - cab < wrap.scrollTop) wrap.scrollTop = fila.offsetTop - cab;
+  else if (fila.offsetTop + fila.offsetHeight > wrap.scrollTop + wrap.clientHeight) wrap.scrollTop = fila.offsetTop + fila.offsetHeight - wrap.clientHeight;
 }
 
 function cargarSeleccion(id) {
@@ -524,32 +624,61 @@ $('#libRows').addEventListener('click', e => {
 $('#libScan').addEventListener('click', () => escanearBiblioteca(true));
 $('#libAdd').addEventListener('click', agregarCarpetaBiblioteca);
 
-// ---------- Teclado ----------
-const keyMap = {};
-for (const [id, k] of Object.entries(KEYS))
-  for (const [act, key] of Object.entries(k))
-    keyMap[/\d/.test(key) ? `Digit${key}` : `Key${key}`] = [id, act];
+// ---------- Pánico ----------
+// Esc: fundido a silencio en 2 s en la salida principal, luego pausa todo y deja el volumen listo otra vez
+let panico = null;
+function panic() {
+  initAudio();
+  if (panico) return;
+  cancelTransition();
+  const g = masterOut.gain, t = ctx.currentTime;
+  holdParam(g); g.linearRampToValueAtTime(0, t + 2);
+  $('#panicBtn').classList.add('on');
+  toast('Pánico: bajando todo a silencio');
+  panico = setTimeout(() => {
+    Object.values(decks).forEach(d => d.audio.pause());
+    holdParam(g); g.setValueAtTime(1, ctx.currentTime + 0.05);
+    $('#panicBtn').classList.remove('on');
+    panico = null;
+    toast('Todo en pausa. Presiona Play para volver a empezar.');
+  }, 2050);
+}
 
+// ---------- Configuración ----------
+function abrirConfig(abrir = $('#cfg').hidden) {
+  $('#cfg').hidden = !abrir;
+  if (abrir) $('#cfgPreset').textContent = Teclas.PRESETS[Teclas.preset].nombre;
+}
+
+// ---------- Teclado ----------
 document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return; // respeta atajos del sistema
   const tag = e.target.tagName;
-  if (tag === 'SELECT' || (tag === 'INPUT' && !['range', 'checkbox'].includes(e.target.type))) return;
-  initAudio();
-  const m = keyMap[e.code];
-  if (m) {
-    e.preventDefault();
-    if (e.repeat && !REPEATABLE.has(m[1])) return;
-    return deckAction(decks[m[0]], m[1], e.shiftKey);
+  if (tag === 'SELECT' || (tag === 'INPUT' && !['range', 'checkbox'].includes(e.target.type))) {
+    if (e.code !== 'Escape') return; // escribiendo: solo Pánico sigue activo
   }
-  switch (e.code) {
-    case 'Space': e.preventDefault(); if (!e.repeat) autoTransition(e.shiftKey); break;
-    case 'ArrowLeft': e.preventDefault(); setXf(state.xf - (e.shiftKey ? 0.2 : 0.05), true); break;
-    case 'ArrowRight': e.preventDefault(); setXf(state.xf + (e.shiftKey ? 0.2 : 0.05), true); break;
-    case 'KeyT': e.preventDefault(); if (!e.repeat) cycleFade(); break;
-    case 'KeyV': e.preventDefault(); if (!e.repeat) toggleBlackout(); break;
-    case 'ArrowUp': e.preventDefault(); moverSeleccion(-1); break;
-    case 'ArrowDown': e.preventDefault(); moverSeleccion(1); break;
-    case 'Enter': case 'NumpadEnter': e.preventDefault(); if (!e.repeat) cargarSeleccion(e.shiftKey ? 'B' : 'A'); break;
+  const a = Teclas.accionDe(e);
+  if (!a) return;
+  e.preventDefault();
+  initAudio();
+  if (a.clave === 'panic') { if (!e.repeat) panic(); return; }
+  if (e.repeat && !a.repetible) return;
+  if (a.pend) return avisoPendiente(a.clave);
+  if (a.deck) return deckAction(decks[a.deck], a.id);
+  switch (a.id) {
+    case 'trans': autoTransition(false); break;
+    case 'cut': autoTransition(true); break;
+    case 'xfLeft': setXf(state.xf - 0.05, true); break;
+    case 'xfRight': setXf(state.xf + 0.05, true); break;
+    case 'xfLeftBig': setXf(state.xf - 0.2, true); break;
+    case 'xfRightBig': setXf(state.xf + 0.2, true); break;
+    case 'fadeDur': cycleFade(); break;
+    case 'black': toggleBlackout(); break;
+    case 'libUp': moverSeleccion(-1); break;
+    case 'libDown': moverSeleccion(1); break;
+    case 'loadA': cargarSeleccion('A'); break;
+    case 'loadB': cargarSeleccion('B'); break;
+    case 'config': abrirConfig(); break;
   }
 });
 
@@ -559,15 +688,24 @@ createDeck('A'); createDeck('B');
 $('#xf').addEventListener('input', e => { initAudio(); setXf(e.target.value / 1000, true); });
 $('#autoBtn').addEventListener('click', () => autoTransition(false));
 $('#cutBtn').addEventListener('click', () => autoTransition(true));
-$('#fade').value = state.fade;
-$('#fade').addEventListener('change', e => { state.fade = Number(e.target.value); store.set('cfg:fade', state.fade); });
+$('#fadeTxt').textContent = `${state.fade} s`;
+$('#fadeBtn').addEventListener('click', cycleFade);
+$('#panicBtn').addEventListener('click', panic);
+$('#cfgBtn').addEventListener('click', () => abrirConfig(true));
+$('#cfgClose').addEventListener('click', () => abrirConfig(false));
+$('#cfg').addEventListener('mousedown', e => { if (e.target.id === 'cfg') abrirConfig(false); });
+['chipMaster', 'chipCue'].forEach(id => $('#' + id).addEventListener('click', () => abrirConfig(true)));
+// Los botones desactivados dicen en qué etapa llegan
+document.querySelectorAll('[data-pend]').forEach(b => { b.title = `Llega en la etapa ${b.dataset.pend}`; });
 $('#stopOld').checked = state.stopOld;
 $('#stopOld').addEventListener('change', e => { state.stopOld = e.target.checked; store.set('cfg:stopOld', state.stopOld); });
 $('#detect').addEventListener('click', () => { initAudio(); detectDevices(true); });
-$('#videoBtn').addEventListener('click', recolocarVideo);
+$('#chipTV').addEventListener('click', recolocarVideo);
 $('#blackBtn').addEventListener('click', toggleBlackout);
 ['outMaster', 'outCue'].forEach(id => $('#' + id).addEventListener('change', e => {
   store.set('cfg:' + id, e.target.value); initAudio(); applyOutputs();
+  salidasPerdidas[id === 'outMaster' ? 'm' : 'c'] = false;
+  renderChipsSalida();
 }));
 navigator.mediaDevices?.addEventListener?.('devicechange', () => detectDevices(false, true));
 
@@ -588,14 +726,37 @@ function render() {
   if (vwin && vwin.closed) { vwin = null; abrirVentanaVideo(); } // no debería cerrarse: si pasa, se reabre
   for (const d of Object.values(decks)) {
     const a = d.audio, dur = a.duration, ok = isFinite(dur) && dur > 0;
-    d.ui.fill.style.width = `${ok ? (a.currentTime / dur) * 100 : 0}%`;
+    const pct = `${ok ? (a.currentTime / dur) * 100 : 0}%`;
+    d.ui.fill.style.width = pct; d.ui.head.style.left = pct; d.ui.wave.style.width = pct;
+    d.ui.vu.style.height = `${nivel(d.analyser) * 100}%`;
     d.ui.cur.textContent = fmt(a.currentTime);
     d.ui.rem.textContent = '-' + fmt(ok ? dur - a.currentTime : 0);
     d.el.classList.toggle('ending', ok && isOnAir(d) && dur - a.currentTime < 30);
   }
+  pintarMaestro(nivel(masterAnalyser));
   requestAnimationFrame(render);
 }
+
+// Nivel 0..1 (pico del último bloque, en escala de dB de -48 a 0)
+const muestras = new Float32Array(1024);
+function nivel(an) {
+  if (!an) return 0;
+  an.getFloatTimeDomainData(muestras);
+  let pico = 0;
+  for (let i = 0; i < muestras.length; i++) { const v = Math.abs(muestras[i]); if (v > pico) pico = v; }
+  if (pico < 1e-4) return 0;
+  return Math.max(0, Math.min(1, 1 + (20 * Math.log10(pico)) / 48));
+}
+const SEGS = 8;
+$('#masterMeter').innerHTML = '<i></i>'.repeat(SEGS);
+const segs = [...document.querySelectorAll('#masterMeter i')];
+function pintarMaestro(v) {
+  const n = Math.round(v * SEGS);
+  segs.forEach((s, i) => { s.className = i < n ? (i >= SEGS - 1 ? 'r' : i >= SEGS - 3 ? 'y' : 'g') : ''; });
+}
 updateOnAir();
+Teclas.pintar();
+Teclas.leerDistribucion().then(() => { Teclas.pintar(); Object.values(decks).forEach(renderMark); });
 detectDevices(false);
 abrirVentanaVideo();
 // La biblioteca se muestra de inmediato y luego se revisan las carpetas en segundo plano
