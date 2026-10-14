@@ -273,6 +273,18 @@ select{background:var(--bg);color:var(--text);border:1px solid var(--line);borde
 .prepPanel.pausa #prepFill{background:var(--muted)}
 .prepPanel{gap:6px}
 
+/* ---------- Liberar espacio ---------- */
+.espRow{margin-top:2px}
+.espBox{width:min(720px,100%);display:flex;flex-direction:column;gap:10px}
+.espSel{display:flex;gap:6px}
+.espLista{max-height:min(420px,50vh);overflow:auto;border:1px solid var(--line);border-radius:8px}
+.espLista td{padding:5px 8px}
+.espLista input{accent-color:var(--panic)}
+.espLista .est{font-size:11px;font-weight:600;white-space:nowrap}
+.espLista .est.falta,.espLista .est.suelta{color:var(--warn)} .espLista .est.uso{color:var(--a)}
+.btn.borrar{border-color:var(--panic);color:#FF8A8E}
+.btn.borrar:disabled{opacity:.4}
+
 /* ---------- Pantallas bajas (laptop 1536×816 con escala 125 %) ---------- */
 @media (max-height:900px){
   .app{gap:6px;padding:6px;--fh:84px}
@@ -330,3 +342,4 @@ select{background:var(--bg);color:var(--text);border:1px solid var(--line);borde
 .tecKey.capt{border-color:var(--warn);color:var(--warn);animation:blink 1s infinite}
 .tecKey.cambiada{border-color:var(--a)}
 .stems .btn.aprox:not(:disabled){border-style:dashed}
+#espInfo.warn{color:var(--warn)}

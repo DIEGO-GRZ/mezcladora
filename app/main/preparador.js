@@ -206,4 +206,11 @@ function detener() {
   setTimeout(() => { try { p.kill(); } catch {} }, 3000);
 }
 
-module.exports = { iniciar, estado, encolar, cancelar, alCambiarMusica, detener };
+// ¿Está preparando algo ahora mismo? (no se puede mover la carpeta de stems a media canción)
+function ocupado() { return !!actual; }
+function usarCarpetaStems(nueva) {
+  cfg.carpetaStems = nueva;
+  fs.mkdirSync(nueva, { recursive: true });
+}
+
+module.exports = { iniciar, estado, encolar, cancelar, alCambiarMusica, detener, ocupado, usarCarpetaStems };

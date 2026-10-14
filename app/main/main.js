@@ -7,6 +7,8 @@ const { Readable } = require('node:stream');
 const { pathToFileURL } = require('node:url');
 const biblioteca = require('./biblioteca');
 const preparador = require('./preparador');
+const config = require('./config');
+const espacio = require('./espacio');
 
 const DEV = !app.isPackaged;
 const APP_DIR = path.resolve(__dirname, '..');
@@ -24,6 +26,7 @@ const TIPOS_MEDIO = {
 };
 
 let win = null;       // mezcladora
+let carpetaStems = null; // se lee de datos/config.json
 let videoWin = null;  // salida de video (segunda pantalla)
 let estadoVideo = { conectada: false, nombre: '', ancho: 0, alto: 0 };
 let videoEn = null;   // id de la pantalla donde está la ventana de video
@@ -53,6 +56,10 @@ function arrancar() {
   session.defaultSession.setPermissionRequestHandler((_wc, permiso, cb) => cb(PERMITIDOS.has(permiso)));
   session.defaultSession.setPermissionCheckHandler((_wc, permiso) => PERMITIDOS.has(permiso));
 
+  // Configuración: la carpeta de stems se puede cambiar desde la app
+  config.cargar(CARPETA_DATOS, { carpetaStems: path.join(CARPETA_DATOS, 'stems') });
+  carpetaStems = config.obtener('carpetaStems');
+
   try {
     biblioteca.abrir(CARPETA_DATOS);
   } catch (err) {
@@ -72,7 +79,7 @@ La mezcladora funciona igual cargando canciones por arrastre.`);
       if (medio) return await servirMedio(medio[1], req);
       // app://mezcladora/stems/<clave>/<archivo>.opus → stems preparados (solo nombres conocidos)
       const stem = /^\/stems\/([0-9a-f]{16})\/(stems|prueba8)\.opus$/.exec(u.pathname);
-      if (stem) return await servirArchivo(path.join(CARPETA_DATOS, 'stems', stem[1], `${stem[2]}.opus`), req);
+      if (stem) return await servirArchivo(path.join(carpetaStems, stem[1], `${stem[2]}.opus`), req);
       const archivo = path.resolve(APP_DIR, '.' + decodeURIComponent(u.pathname));
       if (!archivo.startsWith(APP_DIR + path.sep)) return new Response('Prohibido', { status: 403 });
       const r = await net.fetch(pathToFileURL(archivo).toString());
@@ -100,13 +107,33 @@ La mezcladora funciona igual cargando canciones por arrastre.`);
   // Preparador de stems (Python en segundo plano)
   preparador.iniciar({
     carpetaPreparador: path.resolve(APP_DIR, '..', 'preparador'),
-    carpetaStems: path.join(CARPETA_DATOS, 'stems'),
+    carpetaStems,
     avisar: (canal, datos) => { if (win && !win.isDestroyed()) win.webContents.send(canal, datos); },
   });
   ipcMain.handle('preparador:estado', () => preparador.estado());
   ipcMain.handle('preparador:encolar', (_e, ids) => conBiblioteca(() => preparador.encolar(Array.isArray(ids) ? ids : [ids]), 0));
   ipcMain.handle('preparador:cancelar', (_e, id) => conBiblioteca(() => preparador.cancelar(id), false));
   ipcMain.on('preparador:musica', (_e, sonando) => preparador.alCambiarMusica(sonando));
+
+  // Espacio de los stems
+  ipcMain.handle('espacio:resumen', () => conBiblioteca(() => espacio.resumen(carpetaStems), null));
+  ipcMain.handle('espacio:borrar', (_e, claves, enUso) =>
+    conBiblioteca(() => espacio.borrar(carpetaStems, Array.isArray(claves) ? claves : [], new Set(enUso || [])), null));
+  ipcMain.handle('espacio:cambiarCarpeta', async () => {
+    if (preparador.ocupado()) return { error: 'Espera a que termine la canción que se está preparando.' };
+    const r = await dialog.showOpenDialog(win, { title: 'Carpeta para los stems', defaultPath: carpetaStems, properties: ['openDirectory', 'createDirectory'] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    const nueva = path.resolve(r.filePaths[0]);
+    try {
+      const { movidas } = await espacio.mover(carpetaStems, nueva);
+      carpetaStems = nueva;
+      config.poner('carpetaStems', nueva);
+      preparador.usarCarpetaStems(nueva);
+      return { carpeta: nueva, movidas, libreGb: await espacio.gb(nueva) };
+    } catch (err) {
+      return { error: `No se pudo usar esa carpeta: ${err.message}` };
+    }
+  });
 
   ipcMain.handle('video:estado', () => estadoVideo);
   ipcMain.handle('video:recolocar', () => { colocarVideo(true); return estadoVideo; });

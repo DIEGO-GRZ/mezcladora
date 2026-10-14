@@ -131,6 +131,7 @@ npm<!doctype html>
       <div class="prepBar"><div id="prepFill"></div></div>
       <div class="rowBetween small muted"><span id="prepInfo"></span><span><kbd data-tecla="prep"></kbd> prepara la elegida</span></div>
       <div class="muted small" id="prepNota">Se pausa sola mientras haya música sonando.</div>
+      <div class="rowBetween espRow"><span class="small muted" id="espInfo">Stems: …</span><button class="btn sm" id="libreBtn">Liberar espacio</button></div>
     </div>
   </aside>
 </section>
@@ -148,6 +149,9 @@ npm<!doctype html>
       <button class="btn" id="detect">Detectar dispositivos</button>
     </div>
     <p class="muted small">"Detectar dispositivos" pide permiso de micrófono solo para ver los nombres de tus salidas; no se graba nada.</p>
+    <h3>Stems</h3>
+    <div class="rowBetween"><span class="small muted">Carpeta: <b id="cfgStems">…</b></span><button class="btn sm" id="cfgStemsBtn">Cambiar carpeta…</button></div>
+    <p class="muted small">Al cambiarla se mueven ahí los stems que ya tienes. No se puede mientras se prepara una canción.</p>
     <h3>Transiciones</h3>
     <label class="check"><input type="checkbox" id="stopOld"> Pausar la canción anterior al terminar la transición</label>
     <h3>Teclas</h3>
@@ -166,6 +170,22 @@ npm<!doctype html>
     </div>
     <div class="lbl tecH">Generales</div>
     <div id="tecG" class="tecCols"></div>
+  </div>
+</div>
+
+<!-- Liberar espacio: borrar stems -->
+<div class="modal" id="espDlg" hidden>
+  <div class="modalBox espBox" role="dialog" aria-label="Liberar espacio">
+    <div class="rowBetween"><span class="modalTitle">Liberar espacio</span><button class="btn sm" id="espCerrar">Cerrar</button></div>
+    <p class="muted small" id="espResumen"></p>
+    <div class="espSel">
+      <button class="btn sm" id="espSobrantes" title="Stems de canciones que ya no están o que no pertenecen a ninguna">Elegir sobrantes</button>
+      <button class="btn sm" id="espTodas">Todas</button>
+      <button class="btn sm" id="espNinguna">Ninguna</button>
+    </div>
+    <div class="espLista"><table class="lib"><tbody id="espRows"></tbody></table></div>
+    <div class="rowBetween"><span class="small muted">Las canciones borradas vuelven a "Preparar"; se pueden preparar otra vez cuando quieras.</span>
+      <button class="btn sm borrar" id="espBorrar" disabled>Borrar</button></div>
   </div>
 </div>
 

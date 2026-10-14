@@ -46,7 +46,7 @@ Documento de diseño completo (funciones premium, técnicas de DJ, fuentes): htt
 
 Reutilizar su lógica de audio y teclado al migrar; no reescribir desde cero.
 
-## Estado actual: app de Electron (etapa 1 terminada)
+## Estado actual: app de Electron (etapas 1, 1.5 y 2 terminadas)
 
 Se arranca con `npm start`. Lo que ya existe en `app/`:
 
@@ -120,7 +120,7 @@ mezcladora-personal/
     servicio.py                 # recibe órdenes JSON por stdin, responde eventos JSON por stdout
     separar.py                  # Demucs htdemucs → voz/bateria/bajo/melodia.opus
     analisis.py                 # BPM, tono, detección de voz
-  datos/                        # en .gitignore: biblioteca.sqlite, stems/
+  datos/                        # en .gitignore: biblioteca.sqlite, config.json, stems/ (la carpeta de stems se puede mover desde Configuración)
 ```
 
 - **Electron:** `contextIsolation: true`, `nodeIntegration: false`, todo acceso a disco por IPC desde el preload. Servir archivos locales con un protocolo propio (`protocol.handle`) que soporte peticiones por rangos para poder adelantar en videos largos.
@@ -137,8 +137,8 @@ mezcladora-personal/
 
 - [x] **Prototipo** (ver "Estado actual").
 - [x] **1. Base de escritorio:** Electron con el prototipo migrado, ventana de video automática en la pantalla externa, biblioteca SQLite con carpeta de música.
-- [ ] **1.5. Diseño nuevo:** pasar la interfaz a `diseno/Main.dc.html` (layout, colores, tipografías locales) y las teclas nuevas, antes de agregar stems.
-- [ ] **2. Stems con IA:** preparador Python, cola de preparación, botones de stems, filtro en vivo de respaldo para canciones no preparadas.
+- [x] **1.5. Diseño nuevo:** pasar la interfaz a `diseno/Main.dc.html` (layout, colores, tipografías locales) y las teclas nuevas, antes de agregar stems.
+- [x] **2. Stems con IA:** preparador Python, cola de preparación, botones de stems, filtro en vivo de respaldo para canciones no preparadas.
 - [ ] **3. Análisis:** BPM, tono (Camelot), forma de onda, detección de dónde empieza la voz para sugerir la marca de inicio.
 - [ ] **4. Control fino:** 8 hot cues, loops, marca de salida, estilos de transición (mezcla larga, corte, filtro, eco de salida, loop y subida, cambio de voz), limitador en la salida principal.
 - [ ] **5. Efectos y sonidos:** eco, reverb y filtro (un efecto por transición, en frases de 8/16/32 tiempos), efectos por stem, pads de efectos de sonido.

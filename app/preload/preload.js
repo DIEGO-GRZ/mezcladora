@@ -40,6 +40,14 @@ contextBridge.exposeInMainWorld('mezcladora', {
       return () => ipcRenderer.removeListener('preparador:cancion', f);
     },
   },
+  espacio: {
+    // { carpeta, totalMb, libreGb, items: [{ clave, mb, id, titulo, artista, estado: ok|falta|suelta|preparando }] }
+    resumen: () => ipcRenderer.invoke('espacio:resumen'),
+    // Borra stems; enUso = claves que no se deben tocar → { liberadoMb, fallidas }
+    borrar: (claves, enUso) => ipcRenderer.invoke('espacio:borrar', claves, enUso),
+    // Elige otra carpeta y mueve los stems → { carpeta, movidas, libreGb } | { error } | null
+    cambiarCarpeta: () => ipcRenderer.invoke('espacio:cambiarCarpeta'),
+  },
   video: {
     // { conectada, nombre, ancho, alto } de la pantalla externa
     estado: () => ipcRenderer.invoke('video:estado'),

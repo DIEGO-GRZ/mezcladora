@@ -237,6 +237,14 @@ function verificarStems(carpetaStems) {
   return n;
 }
 
+// Tras borrar una carpeta de stems: sus canciones vuelven a "sin preparar"
+function quitarStemsPorClave(clave) {
+  const quitar = db.prepare("UPDATE canciones SET stems = NULL, stems_info = NULL WHERE id = ? AND stems IN ('listo', 'error')");
+  for (const c of db.prepare('SELECT id, nombre, tamano FROM canciones WHERE stems IS NOT NULL').all()) {
+    if (claveStems(c.nombre, c.tamano) === clave) quitar.run(c.id);
+  }
+}
+
 function cancionStems(id) {
   return db.prepare('SELECT id, nombre, tamano, stems FROM canciones WHERE id = ?').get(Number(id)) || null;
 }
@@ -248,5 +256,5 @@ function cerrar() {
 
 module.exports = {
   abrir, carpetas, agregarCarpeta, canciones, rutaDe, guardarInfo, editarNombre, escanear, cerrar,
-  claveStems, ARCHIVO_STEMS, encolarStems, siguienteEnCola, contarCola, marcarStems, verificarStems, cancionStems,
+  claveStems, ARCHIVO_STEMS, encolarStems, quitarStemsPorClave, siguienteEnCola, contarCola, marcarStems, verificarStems, cancionStems,
 };

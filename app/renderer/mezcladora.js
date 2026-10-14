@@ -985,7 +985,7 @@ function alCambiarCancionStems({ id, stems, stems_info }) {
   const c = lib.canciones.find(x => x.id === id);
   if (!c) return;
   c.stems = stems; c.stems_info = stems_info;
-  if (stems === 'listo') toast(`Stems listos: ${tituloDe(c)}`);
+  if (stems === 'listo') { toast(`Stems listos: ${tituloDe(c)}`); actualizarEspacio(); }
   if (stems === 'error') toast(`No se pudieron preparar los stems de ${tituloDe(c)}`);
   Object.values(decks).forEach(d => { renderStemsTag(d); if (d.libId === id) prepararStemsDeck(d, c); });
   filtrarBiblioteca();
@@ -1126,6 +1126,111 @@ function soltarDeBiblioteca(d, id) {
 $('#libScan').addEventListener('click', () => escanearBiblioteca(true));
 $('#libAdd').addEventListener('click', agregarCarpetaBiblioteca);
 
+// ---------- Espacio de los stems ----------
+let esp = { items: [], sel: new Set() };
+const algoSonando = () => Object.values(decks).some(d => !d.audio.paused);
+
+async function actualizarEspacio() {
+  try {
+    const r = await window.mezcladora.espacio.resumen();
+    if (!r) return;
+    const info = $('#espInfo');
+    info.textContent = `Stems: ${r.totalMb} MB${r.libreGb != null ? ` · ${r.libreGb} GB libres` : ''}`;
+    info.classList.toggle('warn', r.libreGb != null && r.libreGb < 5); // poco espacio: aviso en amarillo
+    info.title = `Carpeta: ${r.carpeta}`;
+    $('#cfgStems').textContent = r.carpeta;
+    return r;
+  } catch {}
+}
+
+async function abrirEspacio() {
+  const r = await actualizarEspacio();
+  if (!r) return toast('No se pudo revisar el espacio');
+  esp = { items: r.items, sel: new Set() };
+  $('#espResumen').textContent = r.items.length
+    ? `${r.items.length} canciones con stems · ${r.totalMb} MB en total${r.libreGb != null ? ` · ${r.libreGb} GB libres en el disco` : ''}`
+    : 'No hay stems preparados.';
+  renderEspacio();
+  $('#espDlg').hidden = false;
+}
+
+// Estado de cada carpeta: si su canción está cargada en un deck que suena, no se puede borrar
+function usoDeck(clave) {
+  const d = Object.values(decks).find(x => x.stClave === clave && x.stemsUrl);
+  return d ? { deck: d.id, sonando: !d.audio.paused } : null;
+}
+
+function renderEspacio() {
+  const etiqueta = it => {
+    const u = usoDeck(it.clave);
+    if (u) return `<span class="est uso">${u.sonando ? `sonando en ${u.deck}` : `cargada en ${u.deck}`}</span>`;
+    return { falta: '<span class="est falta">el archivo ya no está</span>', suelta: '<span class="est suelta">sin canción</span>',
+      preparando: '<span class="est">preparando</span>' }[it.estado] || '';
+  };
+  $('#espRows').innerHTML = esp.items.map(it => {
+    const bloqueada = it.estado === 'preparando' || usoDeck(it.clave)?.sonando;
+    return `<tr><td><input type="checkbox" data-clave="${it.clave}"${esp.sel.has(it.clave) ? ' checked' : ''}${bloqueada ? ' disabled' : ''}></td>
+      <td class="tTit">${esc(it.titulo || `(carpeta ${it.clave})`)}</td><td class="tArt">${esc(it.artista)}</td>
+      <td>${etiqueta(it)}</td><td class="num">${it.mb} MB</td></tr>`;
+  }).join('') || '<tr><td class="libEmpty">Nada que borrar.</td></tr>';
+  const mb = esp.items.filter(i => esp.sel.has(i.clave)).reduce((a, i) => a + i.mb, 0);
+  const b = $('#espBorrar');
+  b.disabled = !esp.sel.size;
+  b.textContent = esp.sel.size ? `Borrar ${esp.sel.size} (${Math.round(mb * 10) / 10} MB)` : 'Borrar';
+}
+
+function elegirEspacio(filtro) {
+  esp.sel = new Set(esp.items.filter(i => filtro(i) && i.estado !== 'preparando' && !usoDeck(i.clave)?.sonando).map(i => i.clave));
+  renderEspacio();
+}
+
+async function borrarEspacio() {
+  const claves = [...esp.sel];
+  if (!claves.length) return;
+  const mb = esp.items.filter(i => esp.sel.has(i.clave)).reduce((a, i) => a + i.mb, 0);
+  if (!confirm(`¿Borrar los stems de ${claves.length} canción(es)? Se liberan ${Math.round(mb * 10) / 10} MB.`)) return;
+  // Lo que suena no se toca; lo que solo está cargado se suelta primero (para liberar el archivo)
+  const enUso = claves.filter(k => usoDeck(k)?.sonando);
+  for (const d of Object.values(decks)) if (d.stClave && claves.includes(d.stClave) && d.audio.paused) prepararStemsDeck(d, null);
+  await new Promise(r => setTimeout(r, 300));
+  try {
+    const r = await window.mezcladora.espacio.borrar(claves, enUso);
+    if (!r) throw new Error();
+    toast(`Espacio liberado: ${r.liberadoMb} MB${r.fallidas.length ? ` · ${r.fallidas.length} no se pudieron borrar` : ''}`);
+  } catch { toast('No se pudieron borrar los stems'); }
+  await cargarBiblioteca();
+  Object.values(decks).forEach(renderStemsTag);
+  await abrirEspacio();
+}
+
+async function cambiarCarpetaStems() {
+  if (algoSonando()) return toast('Detén la música para cambiar la carpeta de stems');
+  // Soltar los stems cargados para que se puedan mover
+  const recargar = Object.values(decks).filter(d => d.stemsUrl);
+  recargar.forEach(d => prepararStemsDeck(d, null));
+  const r = await window.mezcladora.espacio.cambiarCarpeta();
+  if (r?.error) toast(r.error);
+  else if (r) toast(`Stems en ${r.carpeta}${r.movidas ? ` (${r.movidas} movidos)` : ''}`);
+  for (const d of recargar) prepararStemsDeck(d, lib.canciones.find(c => c.id === d.libId));
+  actualizarEspacio();
+}
+
+$('#libreBtn').addEventListener('click', abrirEspacio);
+$('#espCerrar').addEventListener('click', () => { $('#espDlg').hidden = true; });
+$('#espDlg').addEventListener('mousedown', e => { if (e.target.id === 'espDlg') $('#espDlg').hidden = true; });
+$('#espRows').addEventListener('change', e => {
+  const k = e.target.dataset?.clave;
+  if (!k) return;
+  if (e.target.checked) esp.sel.add(k); else esp.sel.delete(k);
+  e.target.blur();
+  renderEspacio();
+});
+$('#espSobrantes').addEventListener('click', () => elegirEspacio(i => i.estado === 'falta' || i.estado === 'suelta'));
+$('#espTodas').addEventListener('click', () => elegirEspacio(() => true));
+$('#espNinguna').addEventListener('click', () => elegirEspacio(() => false));
+$('#espBorrar').addEventListener('click', borrarEspacio);
+$('#cfgStemsBtn').addEventListener('click', cambiarCarpetaStems);
+
 // ---------- Pánico ----------
 // Esc: fundido a silencio en 2 s en la salida principal, luego pausa todo y deja el volumen listo otra vez
 let panico = null;
@@ -1150,6 +1255,7 @@ function panic() {
 function abrirConfig(abrir = $('#cfg').hidden) {
   $('#cfg').hidden = !abrir;
   document.dispatchEvent(new Event(abrir ? 'config:abierta' : 'config:cerrada'));
+  if (abrir) actualizarEspacio();
 }
 
 // ---------- Teclado ----------
@@ -1273,6 +1379,7 @@ cargarBiblioteca().then(() => escanearBiblioteca(false));
 window.mezcladora.preparador.alCambiarEstado(mostrarPreparador);
 window.mezcladora.preparador.alCambiarCancion(alCambiarCancionStems);
 window.mezcladora.preparador.estado().then(mostrarPreparador).catch(() => {});
+actualizarEspacio();
 window.mezcladora.video.alCambiar(e => mostrarEstadoVideo(e, true));
 window.mezcladora.video.estado().then(e => mostrarEstadoVideo(e, false)).catch(() => mostrarEstadoVideo(null, false));
 render();
