@@ -106,7 +106,7 @@ function canciones() {
            c.carpeta_id, k.ruta AS carpeta
     FROM canciones c JOIN carpetas k ON k.id = c.carpeta_id
     ORDER BY c.falta, COALESCE(NULLIF(c.artista, ''), c.titulo) COLLATE NOCASE, c.titulo COLLATE NOCASE
-  `).all();
+  `).all().map(c => ({ ...c, clave: claveStems(c.nombre, c.tamano) })); // carpeta de sus stems
 }
 
 // Solo se sirven archivos que están en la biblioteca (nunca una ruta arbitraria)
@@ -197,7 +197,7 @@ async function escanear() {
 function claveStems(nombre, tamano) {
   return crypto.createHash('sha1').update(`${nombre}|${tamano}`).digest('hex').slice(0, 16);
 }
-const STEMS = ['voz', 'bateria', 'bajo', 'melodia'];
+const ARCHIVO_STEMS = 'stems.opus'; // 8 canales: ver preparador/separar.py
 
 function encolarStems(ids) {
   const poner = db.prepare(`UPDATE canciones SET stems = 'cola', stems_info = NULL, stems_orden = ?
@@ -232,7 +232,7 @@ function verificarStems(carpetaStems) {
   let n = 0;
   for (const c of listos) {
     const dir = path.join(carpetaStems, claveStems(c.nombre, c.tamano));
-    if (!STEMS.every(s => fs.existsSync(path.join(dir, `${s}.opus`)))) { quitar.run(c.id); n++; }
+    if (!fs.existsSync(path.join(dir, ARCHIVO_STEMS))) { quitar.run(c.id); n++; }
   }
   return n;
 }
@@ -248,5 +248,5 @@ function cerrar() {
 
 module.exports = {
   abrir, carpetas, agregarCarpeta, canciones, rutaDe, guardarInfo, editarNombre, escanear, cerrar,
-  claveStems, STEMS, encolarStems, siguienteEnCola, contarCola, marcarStems, verificarStems, cancionStems,
+  claveStems, ARCHIVO_STEMS, encolarStems, siguienteEnCola, contarCola, marcarStems, verificarStems, cancionStems,
 };

@@ -131,7 +131,7 @@ mezcladora-personal/
   - Demucs `htdemucs` (4 stems: voz, batería, bajo, otros) con `--segment 7` para caber en 4 GB de VRAM. El repo original está archivado desde enero 2025: fijar versión.
   - Opción de alta calidad para voz/instrumental: BS-RoFormer vía `audio-separator` (MIT, dar crédito a UVR).
   - Respaldo en CPU si falla CUDA (≈1.5× la duración de la canción).
-- **Stems en vivo:** reproducir con buffers sincronizados para que nunca se desfasen. Botones como VirtualDJ: Vocal, Instru, Bass, Kick, HiHat (Kick y HiHat = batería separada por filtro), Acapella, Instrumental.
+- **Stems en vivo (hecho):** un solo `stems.opus` de 8 canales (7.1) por canción → un solo decodificador, los stems nunca se desfasan entre sí. Canales: 0-1 voz · 2 bajo (mono) · 3 vacío (el LFE, Opus lo recorta a graves) · 4-5 batería · 6-7 melodía. En el deck, un `<audio>` aparte con los stems sigue al original (`<video>`): se alinea en cada `playing`/salto y corrige desvíos con ±3 % de velocidad. Un `<video>` con imagen entrega su audio ~1 cuadro tarde respecto a su `currentTime`: el desfase real se mide mientras suena (correlación cruzada por FFT en `app/renderer/correlacion.js`, un Web Worker) y se guarda por canción (`stoff:<clave>`). Mientras no se toque ningún stem suena el original. Kick (<120 Hz) y HiHat (>6 kHz) salen de la batería con filtros Linkwitz-Riley de 4.º orden. Acapella/Instrumental son modos que al quitarse regresan al estado anterior.
 
 ## Plan por etapas
 

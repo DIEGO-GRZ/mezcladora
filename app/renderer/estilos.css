@@ -113,7 +113,8 @@ kbd+kbd{margin-left:3px}
 .cuesFx > div:first-child{flex:1 1 220px} .cuesFx > div:last-child{flex:0 1 140px}
 .cuesFx .btn{width:100%}
 .lbl .norm{text-transform:none;letter-spacing:0}
-.stems .btn:not(:disabled):not(.on){border-color:var(--c);color:var(--c)}
+.stems .btn:not(:disabled):not(.on):not([data-act=acapella]):not([data-act=instru]){border-color:var(--c);color:var(--c)}
+.stems .btn.mute:not(:disabled){border-color:var(--line);color:var(--muted);text-decoration:line-through}
 
 /* ---------- Mixer ---------- */
 .mixer{flex:0 1 400px;min-width:300px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:14px}

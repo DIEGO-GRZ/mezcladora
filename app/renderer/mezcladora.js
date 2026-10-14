@@ -63,16 +63,222 @@ function connectDeck(d) {
   d.volGain = ctx.createGain(); d.volGain.gain.value = d.vol;
   d.xfGain = ctx.createGain(); d.xfGain.gain.value = deckLevel(d);
   d.cueGain = ctx.createGain(); d.cueGain.gain.value = d.cue ? 1 : 0;
-  d.src.connect(d.volGain).connect(d.xfGain).connect(masterGain);
+  // pre = lo que suena del deck: el original o la suma de stems (ver "Stems en vivo")
+  d.pre = ctx.createGain();
+  d.origGain = ctx.createGain();
+  d.src.connect(d.origGain).connect(d.pre);
+  d.pre.connect(d.volGain).connect(d.xfGain).connect(masterGain);
   d.analyser = ctx.createAnalyser(); d.analyser.fftSize = 1024;
   d.volGain.connect(d.analyser); // medidor del deck: después del volumen, antes del crossfader
-  d.src.connect(d.cueGain).connect(cueBus); // pre-escucha antes del volumen: se oye aunque el fader esté abajo
+  d.pre.connect(d.cueGain).connect(cueBus); // pre-escucha antes del volumen: se oye aunque el fader esté abajo
+  crearGrafoStems(d);
 }
 
 function holdParam(p) {
   const t = ctx.currentTime;
   if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t);
   else { const v = p.value; p.cancelScheduledValues(0); p.setValueAtTime(v, t); }
+}
+
+// ---------- Stems en vivo ----------
+// Cada deck tiene un segundo reproductor (d.stemsEl) con stems.opus: 8 canales en un solo archivo, así los
+// stems nunca se desfasan entre sí. Canales: 0-1 voz · 2 bajo (mono) · 3 vacío · 4-5 batería · 6-7 melodía.
+// El original (d.audio) manda: los stems lo siguen. Mientras no se toque ningún stem suena el original.
+const STEMS_BASE = { voz: true, mel: true, bajo: true, bat: true, kick: true, hat: true };
+const ACCION_STEM = { stemVoz: 'voz', stemMel: 'mel', stemBajo: 'bajo', stemBat: 'bat', kick: 'kick', hihat: 'hat' };
+const NOMBRE_STEM = { voz: 'Voz', mel: 'Melodía', bajo: 'Bajo', bat: 'Batería', kick: 'Kick', hat: 'HiHat' };
+const FUNDIDO_STEMS = 0.02; // s: cambio sin clics
+
+function crearGrafoStems(d) {
+  d.stemSrc = ctx.createMediaElementSource(d.stemsEl);
+  const sp = ctx.createChannelSplitter(8);
+  d.stemSrc.connect(sp);
+  const estereo = (izq, der) => { const m = ctx.createChannelMerger(2); sp.connect(m, izq, 0); sp.connect(m, der, 1); return m; };
+  const g = () => ctx.createGain();
+  // Filtros Linkwitz-Riley de 4.º orden (dos Butterworth en cascada): las bandas suman plano
+  const lr4 = (tipo, f) => {
+    const a = ctx.createBiquadFilter(), b = ctx.createBiquadFilter();
+    a.type = b.type = tipo; a.frequency.value = b.frequency.value = f; a.Q.value = b.Q.value = Math.SQRT1_2;
+    a.connect(b); return { entrada: a, salida: b };
+  };
+  d.sg = { voz: g(), mel: g(), bajo: g(), bat: g(), kick: g(), hat: g(), medios: g() };
+  d.stemsSum = g();
+  d.stemsSum.gain.value = 0;
+  // Tomas para medir el desfase real (ver medirDesfase): el original y la suma de stems sin tocar
+  d.stTap = g();
+  d.anO = ctx.createAnalyser(); d.anO.fftSize = MUESTRAS_DESFASE; d.src.connect(d.anO);
+  d.anS = ctx.createAnalyser(); d.anS.fftSize = MUESTRAS_DESFASE; d.stTap.connect(d.anS);
+
+  const vozM = estereo(0, 1), bajoM = estereo(2, 2), batM = estereo(4, 5), melM = estereo(6, 7); // bajo mono a los dos lados
+  [vozM, bajoM, batM, melM].forEach(m => m.connect(d.stTap));
+  vozM.connect(d.sg.voz).connect(d.stemsSum);
+  bajoM.connect(d.sg.bajo).connect(d.stemsSum);
+  melM.connect(d.sg.mel).connect(d.stemsSum);
+  // Batería: volumen general y luego tres bandas → Kick (<120 Hz), medios, HiHat (>6 kHz)
+  const bat = batM.connect(d.sg.bat);
+  const bajos = lr4('lowpass', 120), altos = lr4('highpass', 6000);
+  const m1 = lr4('highpass', 120), m2 = lr4('lowpass', 6000);
+  bat.connect(bajos.entrada); bajos.salida.connect(d.sg.kick).connect(d.stemsSum);
+  bat.connect(altos.entrada); altos.salida.connect(d.sg.hat).connect(d.stemsSum);
+  bat.connect(m1.entrada); m1.salida.connect(m2.entrada); m2.salida.connect(d.sg.medios).connect(d.stemsSum);
+
+  d.stemsSum.connect(d.pre);
+  aplicarStems(d);
+}
+
+// ¿La canción del deck tiene stems y ya cargaron?
+const tieneStems = d => !!d.stemsUrl;
+
+function reiniciarStems(d) {
+  d.st = { ...STEMS_BASE };
+  d.stModo = null;        // 'acapella' | 'instru' | null
+  d.stPrevio = null;      // estado para volver al quitar acapella/instrumental
+}
+
+// Conecta (o quita) el archivo de stems del deck según la canción cargada
+function prepararStemsDeck(d, c) {
+  const url = c && c.stems === 'listo' && c.clave ? `/stems/${c.clave}/stems.opus` : null;
+  if (url === d.stemsUrl) return;
+  d.stemsUrl = url;
+  // Desfase ya medido para esta canción (si no, se mide al sonar)
+  d.stClave = url ? c.clave : null;
+  const guardado = url ? store.get(`stoff:${c.clave}`, null) : null;
+  // Sin medición previa: un video suele ir ~1 cuadro atrás (≈ -35 ms); un audio, alineado
+  d.stOff = typeof guardado === 'number' ? guardado : c?.tipo === 'video' ? -0.035 : 0;
+  d.stConfirmado = typeof guardado === 'number' ? 2 : 0;
+  d.stIntentos = 0;
+  d.stemsEl.pause();
+  if (url) {
+    d.stemsEl.src = url;
+    d.stemsEl.currentTime = d.audio.currentTime || 0;
+    if (!d.audio.paused) d.stemsEl.play().catch(() => {});
+  } else {
+    d.stemsEl.removeAttribute('src');
+    d.stemsEl.load();
+    reiniciarStems(d);
+  }
+  aplicarStems(d);
+  renderStems(d);
+}
+
+function accionStem(d, act) {
+  if (!needTrack(d)) return;
+  if (!tieneStems(d)) {
+    const c = lib.canciones.find(x => x.id === d.libId);
+    const estado = c?.stems === 'cola' || c?.stems === 'preparando' ? 'se están preparando' : `no están preparados (${Teclas.etiqueta('prep')} los prepara)`;
+    return toast(`Deck ${d.id}: los stems de esta canción ${estado}`);
+  }
+  if (act === 'acapella' || act === 'instru') {
+    if (d.stModo === act) {                     // apagar el modo: volver a como estaba
+      d.st = d.stPrevio || { ...STEMS_BASE };
+      d.stModo = null; d.stPrevio = null;
+    } else {
+      if (!d.stModo) d.stPrevio = { ...d.st };
+      d.stModo = act;
+      d.st = act === 'acapella'
+        ? { voz: true, mel: false, bajo: false, bat: false, kick: true, hat: true }
+        : { ...(d.stPrevio || STEMS_BASE), voz: false };
+    }
+  } else {
+    const k = ACCION_STEM[act];
+    d.stModo = null; d.stPrevio = null;         // tocar un stem suelto sale de acapella/instrumental
+    d.st[k] = !d.st[k];
+  }
+  aplicarStems(d);
+  renderStems(d);
+}
+
+// Lleva los volúmenes de cada stem a su estado; si todo está normal suena el original
+function aplicarStems(d) {
+  if (!ctx || !d.sg) return;
+  const t = ctx.currentTime;
+  const poner = (param, v) => { holdParam(param); param.setTargetAtTime(v, t, FUNDIDO_STEMS / 3); };
+  const s = d.st;
+  poner(d.sg.voz.gain, s.voz ? 1 : 0);
+  poner(d.sg.mel.gain, s.mel ? 1 : 0);
+  poner(d.sg.bajo.gain, s.bajo ? 1 : 0);
+  poner(d.sg.bat.gain, s.bat ? 1 : 0);
+  poner(d.sg.kick.gain, s.kick ? 1 : 0);
+  poner(d.sg.hat.gain, s.hat ? 1 : 0);
+  const usarStems = tieneStems(d) && Object.keys(STEMS_BASE).some(k => !s[k]);
+  poner(d.stemsSum.gain, usarStems ? 1 : 0);
+  poner(d.origGain.gain, usarStems ? 0 : 1);
+}
+
+// --- Desfase real entre el original y los stems ---
+// Un <video> con imagen entrega su audio unos milisegundos (≈ un cuadro) más tarde de lo que dice su
+// currentTime; un <audio> no. Por eso, mientras suena, se compara la onda del original con la suma de stems
+// (correlación cruzada en un Web Worker) y se corrige d.stOff. Con 2 confirmaciones se guarda por canción.
+const MUESTRAS_DESFASE = 16384;
+const correlador = new Worker('correlacion.js');
+correlador.onmessage = ({ data: { id, retraso, confianza } }) => {
+  const [deck, carga] = id.split(':');
+  const d = decks[deck];
+  if (!d || Number(carga) !== d.loadId || !d.stemsUrl) return;
+  if (confianza < 0.6) return;                      // tramo poco claro (silencio, efectos): no cuenta
+  if (Math.abs(retraso) < 0.003) {
+    if (++d.stConfirmado >= 2) store.set(`stoff:${d.stClave}`, +d.stOff.toFixed(4));
+    return;
+  }
+  d.stOff += retraso;                               // negativo = los stems iban adelantados
+  d.stConfirmado = 0;
+  alinearStems(d);
+};
+function medirDesfase(d) {
+  if (d.stConfirmado >= 2 || !d.anO || d.stIntentos > 20) return;
+  const ahora = performance.now();
+  if (ahora < (d.proxMedida || 0) || Math.abs(d.stemsEl.playbackRate - 1) > 0.002) return;
+  d.proxMedida = ahora + 1200;
+  d.stIntentos++;
+  const o = new Float32Array(MUESTRAS_DESFASE), s = new Float32Array(MUESTRAS_DESFASE);
+  d.anO.getFloatTimeDomainData(o);
+  d.anS.getFloatTimeDomainData(s);
+  correlador.postMessage({ id: `${d.id}:${d.loadId}`, o, s, rate: ctx.sampleRate, maxMs: 80 }, [o.buffer, s.buffer]);
+}
+
+function renderStems(d) {
+  const hay = tieneStems(d);
+  for (const [act, k] of Object.entries(ACCION_STEM)) {
+    const b = $(`[data-act="${act}"]`, d.el);
+    b.disabled = !hay;
+    b.classList.toggle('mute', hay && !d.st[k]);
+    b.title = hay ? `${NOMBRE_STEM[k]}: ${d.st[k] ? 'suena' : 'apagado'}` : 'Prepara los stems de esta canción para usarlo';
+  }
+  for (const act of ['acapella', 'instru']) {
+    const b = $(`[data-act="${act}"]`, d.el);
+    b.disabled = !hay;
+    b.classList.toggle('on', hay && d.stModo === act);
+  }
+}
+
+// --- Sincronía: los stems siguen al original ---
+// El original (sobre todo un video) tarda en arrancar tras un play o un salto. Los stems esperan quietos
+// hasta que el original de verdad suena ('playing') y entonces se alinean y arrancan.
+function seguirOriginal(d, ev) {
+  if (!d.stemsUrl) return;
+  const a = d.audio, s = d.stemsEl;
+  if (ev === 'playing') { alinearStems(d); s.play().catch(() => {}); return; }
+  s.pause();                                   // play (aún no suena), seeking, pause, ended
+  if (ev === 'seeking' || ev === 'play') s.currentTime = Math.max(0, a.currentTime + (d.stOff || 0));
+}
+function alinearStems(d) {
+  d.stemsEl.currentTime = Math.max(0, d.audio.currentTime + (d.stOff || 0));
+  d.stemsEl.playbackRate = 1;
+  d.desvio = 0;
+  d.calmaHasta = performance.now() + 400;      // tras alinear, dejar que se asiente antes de medir
+}
+// En cada cuadro: desvío pequeño → se corrige acelerando o frenando un poco; grande → salto
+function sincronizarStems(d) {
+  const a = d.audio, s = d.stemsEl;
+  if (!d.stemsUrl || a.paused || a.seeking || a.readyState < 3 || s.readyState < 2) return;
+  if (s.paused) { alinearStems(d); s.play().catch(() => {}); return; }
+  if (performance.now() < (d.calmaHasta || 0)) return;
+  medirDesfase(d);
+  const desvio = s.currentTime - (a.currentTime + (d.stOff || 0));
+  d.desvio = (d.desvio ?? desvio) * 0.8 + desvio * 0.2; // suavizado: currentTime trae algo de ruido
+  if (Math.abs(d.desvio) > 0.04) { alinearStems(d); return; }
+  const r = Math.abs(d.desvio) < 0.005 ? 1 : 1 - Math.max(-0.03, Math.min(0.03, d.desvio));
+  if (Math.abs(s.playbackRate - r) > 0.0005) s.playbackRate = r;
 }
 
 // ---------- Decks ----------
@@ -111,8 +317,8 @@ function deckHTML(id) {
     ${bot(id, 'back', '−5 s')}${bot(id, 'fwd', '+5 s')}${bot(id, 'loop', 'Loop 4', 4)}${bot(id, 'sync', 'Sync', 3)}
   </div>
   <div class="row8 stems">
-    ${bot(id, 'stemVoz', 'Voz', 2)}${bot(id, 'stemMel', 'Melodía', 2)}${bot(id, 'stemBajo', 'Bajo', 2)}${bot(id, 'stemBat', 'Batería', 2)}
-    ${bot(id, 'acapella', 'Acapella', 2)}${bot(id, 'instru', 'Instru.', 2)}${bot(id, 'kick', 'Kick', 2)}${bot(id, 'hihat', 'HiHat', 2)}
+    ${bot(id, 'stemVoz', 'Voz')}${bot(id, 'stemMel', 'Melodía')}${bot(id, 'stemBajo', 'Bajo')}${bot(id, 'stemBat', 'Batería')}
+    ${bot(id, 'acapella', 'Acapella')}${bot(id, 'instru', 'Instru.')}${bot(id, 'kick', 'Kick')}${bot(id, 'hihat', 'HiHat')}
   </div>
   <div class="row5">
     ${[1, 2, 3, 4].map(n => bot(id, `cue${n}`, `Cue ${n}`, 4)).join('')}${bot(id, 'fx', 'Eco ▾', 5)}
@@ -134,8 +340,12 @@ function createDeck(id) {
   audio.playsInline = true;
   audio.preservesPitch = true;
   $('#mediaPool').appendChild(audio);
+  const stemsEl = document.createElement('audio');
+  stemsEl.preload = 'auto';
+  stemsEl.preservesPitch = false; // las correcciones de sincronía (±2 %) no se notan y no dejan artefactos
+  $('#mediaPool').appendChild(stemsEl);
   const fcol = $(`.fcol[data-deck="${id}"]`);
-  const d = { id, el, audio, file: null, key: null, url: null, mark: null, cue: false, vol: 1, loadId: 0, isVideo: false,
+  const d = { id, el, audio, stemsEl, stemsUrl: null, file: null, key: null, url: null, mark: null, cue: false, vol: 1, loadId: 0, isVideo: false,
     ui: { fill: $('.fill', el), head: $('.bar .head', el), cur: $('.cur', el), rem: $('.rem', el), play: $('[data-act=play] span', el),
       state: $('.dState', el), wave: $(`.waveRow[data-deck="${id}"] .wfill`), vu: $('.vufill', fcol) } };
   decks[id] = d;
@@ -171,6 +381,10 @@ function createDeck(id) {
   $('.vol', fcol).addEventListener('input', e => setVol(d, e.target.value / 100));
   ['play', 'pause', 'ended'].forEach(ev => audio.addEventListener(ev, () => { updatePlayBtn(d); renderDeckState(d); avisarMusica(); }));
   audio.addEventListener('durationchange', () => renderMark(d));
+  ['play', 'playing', 'pause', 'seeking', 'ended'].forEach(ev => audio.addEventListener(ev, () => seguirOriginal(d, ev)));
+  stemsEl.addEventListener('error', () => { if (d.stemsUrl) { toast(`Deck ${id}: no se pudieron leer los stems`); d.stemsUrl = null; aplicarStems(d); renderStems(d); } });
+  reiniciarStems(d);
+  renderStems(d);
   audio.addEventListener('loadeddata', () => {
     d.isVideo = audio.videoWidth > 0; // confirma si el archivo realmente trae imagen
     renderBadge(d); feedVideo(d); updateVideoOut();
@@ -208,6 +422,9 @@ function cargarEnDeck(d, m) {
   d.key = `mark:${file.name}|${file.size}`;
   d.url = m.url; d.urlBlob = !!m.blob; d.libId = m.libId ?? null;
   d.mark = store.get(d.key, null);
+  reiniciarStems(d);
+  d.stemsUrl = '__cambio__'; // fuerza a prepararStemsDeck a actualizar
+  prepararStemsDeck(d, m.libId != null ? lib.canciones.find(x => x.id === m.libId) : null);
   d.isVideo = m.isVideo;
   d.audio.src = d.url;
   d.audio.addEventListener('loadedmetadata', () => {
@@ -247,6 +464,8 @@ function deckAction(d, act) {
     case 'tomark': if (needTrack(d)) d.audio.currentTime = d.mark ?? 0; break;
     case 'back': if (needTrack(d)) d.audio.currentTime = Math.max(0, d.audio.currentTime - 5); break;
     case 'fwd': if (needTrack(d)) d.audio.currentTime = Math.min(d.audio.duration || 0, d.audio.currentTime + 5); break;
+    case 'stemVoz': case 'stemMel': case 'stemBajo': case 'stemBat':
+    case 'acapella': case 'instru': case 'kick': case 'hihat': accionStem(d, act); break;
     default: avisoPendiente(`${d.id}.${act}`);
   }
 }
@@ -704,7 +923,7 @@ function alCambiarCancionStems({ id, stems, stems_info }) {
   c.stems = stems; c.stems_info = stems_info;
   if (stems === 'listo') toast(`Stems listos: ${tituloDe(c)}`);
   if (stems === 'error') toast(`No se pudieron preparar los stems de ${tituloDe(c)}`);
-  Object.values(decks).forEach(renderStemsTag);
+  Object.values(decks).forEach(d => { renderStemsTag(d); if (d.libId === id) prepararStemsDeck(d, c); });
   filtrarBiblioteca();
 }
 
@@ -954,6 +1173,7 @@ function render() {
     const pct = `${ok ? (a.currentTime / dur) * 100 : 0}%`;
     d.ui.fill.style.width = pct; d.ui.head.style.left = pct; d.ui.wave.style.width = pct;
     d.ui.vu.style.height = `${nivel(d.analyser) * 100}%`;
+    sincronizarStems(d);
     d.ui.cur.textContent = fmt(a.currentTime);
     d.ui.rem.textContent = '-' + fmt(ok ? dur - a.currentTime : 0);
     d.el.classList.toggle('ending', ok && isOnAir(d) && dur - a.currentTime < 30);

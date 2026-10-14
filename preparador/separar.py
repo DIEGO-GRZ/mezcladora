@@ -3,7 +3,9 @@
 Uso de prueba:
     .venv\\Scripts\\python.exe separar.py <archivo de audio o video> <carpeta de salida>
 
-Escribe en la carpeta de salida: voz.opus, bateria.opus, bajo.opus, melodia.opus
+Escribe en la carpeta de salida un solo archivo stems.opus de 8 canales (7.1), para que los stems
+nunca se desfasen al reproducirlos (un solo decodificador):
+    0-1 voz (L/R) · 2 bajo (mono) · 3 vacío (LFE: Opus lo recorta a graves) · 4-5 batería · 6-7 melodía
 e imprime el avance como líneas JSON.
 """
 from __future__ import annotations
@@ -26,7 +28,7 @@ FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 SR = 44100                      # frecuencia con la que trabaja htdemucs
 MODELO = "htdemucs"             # 4 stems: drums, bass, other, vocals
 SEGMENTO = 7                    # segundos por bloque: cabe en 4 GB de VRAM (máximo del modelo: 7.8)
-BITRATE = "96k"                 # Opus estéreo: buena calidad y ~3 MB por stem en 4 min
+BITRATE = "320k"                # total de los 8 canales (~96k por stem estéreo): ~9 MB en 4 min
 # Nombres de Demucs → nombres de la mezcladora
 NOMBRES = {"vocals": "voz", "drums": "bateria", "bass": "bajo", "other": "melodia"}
 
@@ -82,13 +84,21 @@ def cargar_audio(ruta: Path) -> torch.Tensor:
     return torch.from_numpy(datos)
 
 
+def a_8_canales(stems: dict[str, torch.Tensor]) -> torch.Tensor:
+    """Arma el orden de canales que espera la mezcladora (ver arriba)."""
+    voz, bat, mel = stems["voz"], stems["bateria"], stems["melodia"]
+    bajo = stems["bajo"].mean(0)                  # el bajo casi siempre va al centro: mono
+    vacio = torch.zeros_like(bajo)
+    return torch.stack([voz[0], voz[1], bajo, vacio, bat[0], bat[1], mel[0], mel[1]])
+
+
 def guardar_opus(audio: torch.Tensor, destino: Path) -> None:
-    """Comprime un stem (2, muestras) a Opus. Se escribe a un temporal y se renombra al final."""
+    """Comprime (8, muestras) a Opus 7.1. Se escribe a un temporal y se renombra al final."""
     temporal = destino.with_suffix(".tmp.opus")
     datos = audio.clamp(-1, 1).T.contiguous().numpy().astype(np.float32).tobytes()
     proc = subprocess.run(
-        [FFMPEG, "-v", "error", "-nostdin", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "2", "-i", "-",
-         "-c:a", "libopus", "-b:a", BITRATE, "-ar", "48000", str(temporal)],
+        [FFMPEG, "-v", "error", "-nostdin", "-y", "-f", "f32le", "-ar", str(SR), "-ac", "8", "-channel_layout", "7.1",
+         "-i", "-", "-c:a", "libopus", "-b:a", BITRATE, "-mapping_family", "1", "-ar", "48000", str(temporal)],
         input=datos, capture_output=True, creationflags=SIN_VENTANA,
     )
     if proc.returncode != 0:
@@ -135,8 +145,8 @@ def separar(ruta: Path, carpeta: Path, control=None) -> dict:
 
     t_sep = time.time() - inicio
     avisar(etapa="guardando")
-    for i, fuente in enumerate(modelo().sources):
-        guardar_opus(stems[i], carpeta / f"{NOMBRES[fuente]}.opus")
+    por_nombre = {NOMBRES[f]: stems[i] for i, f in enumerate(modelo().sources)}
+    guardar_opus(a_8_canales(por_nombre), carpeta / "stems.opus")
 
     vram = torch.cuda.max_memory_allocated() / 2**20 if dispositivo == "cuda" else 0
     resultado = dict(etapa="listo", dispositivo=dispositivo, duracion=round(duracion, 1),

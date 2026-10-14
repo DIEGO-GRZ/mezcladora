@@ -70,6 +70,9 @@ La mezcladora funciona igual cargando canciones por arrastre.`);
       if (u.host !== 'mezcladora') return new Response('No encontrado', { status: 404 });
       const medio = /^\/medio\/(\d+)$/.exec(u.pathname);
       if (medio) return await servirMedio(medio[1], req);
+      // app://mezcladora/stems/<clave>/<archivo>.opus → stems preparados (solo nombres conocidos)
+      const stem = /^\/stems\/([0-9a-f]{16})\/(stems|prueba8)\.opus$/.exec(u.pathname);
+      if (stem) return await servirArchivo(path.join(CARPETA_DATOS, 'stems', stem[1], `${stem[2]}.opus`), req);
       const archivo = path.resolve(APP_DIR, '.' + decodeURIComponent(u.pathname));
       if (!archivo.startsWith(APP_DIR + path.sep)) return new Response('Prohibido', { status: 403 });
       const r = await net.fetch(pathToFileURL(archivo).toString());
@@ -280,6 +283,10 @@ async function conBiblioteca(fn, siFalla) {
 async function servirMedio(id, req) {
   const ruta = biblioteca.rutaDe(id);
   if (!ruta) return new Response('No encontrado', { status: 404 });
+  return servirArchivo(ruta, req);
+}
+
+async function servirArchivo(ruta, req) {
   let st;
   try { st = await fs.promises.stat(ruta); } catch { return new Response('No encontrado', { status: 404 }); }
   const tipo = TIPOS_MEDIO[path.extname(ruta).toLowerCase()] || 'application/octet-stream';
