@@ -46,6 +46,7 @@ const Teclas = (() => {
     { id: 'loadA', nombre: 'Cargar en deck A' },
     { id: 'loadB', nombre: 'Cargar en deck B' },
     { id: 'config', nombre: 'Abrir configuración' },
+    { id: 'prep', nombre: 'Preparar stems de la canción elegida' },
   ];
 
   // Lista completa: 'A.play', 'B.play', ..., 'trans', ...
@@ -67,7 +68,7 @@ const Teclas = (() => {
     xfLeft: k('ArrowLeft'), xfRight: k('ArrowRight'), xfLeftBig: k('ArrowLeft', true), xfRightBig: k('ArrowRight', true),
     estilo1: k('F1'), estilo2: k('F2'), estilo3: k('F3'), estilo4: k('F4'), estilo5: k('F5'), estilo6: k('F6'),
     libUp: k('ArrowUp'), libDown: k('ArrowDown'), loadA: k('Enter'), loadB: k('Enter', true),
-    config: k('F10'),
+    config: k('F10'), prep: k('KeyN'),
   };
 
   // Distribución del diseño (CLAUDE.md): deck A con la mano izquierda, deck B con la derecha

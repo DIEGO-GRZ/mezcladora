@@ -259,6 +259,19 @@ select{background:var(--bg);color:var(--text);border:1px solid var(--line);borde
 .deck.soltar{box-shadow:0 0 0 3px var(--c) inset}
 .deck.soltar .drop{display:block;border-color:var(--c);color:var(--c)}
 
+/* ---------- Stems: columna y preparación ---------- */
+.stemBtn{font:600 11px var(--sans);background:transparent;border:1px solid var(--line);border-radius:5px;color:var(--muted);padding:1px 7px;cursor:pointer;white-space:nowrap}
+.stemBtn:hover{border-color:var(--text);color:var(--text)}
+.stemBtn.cola,.stemSt.prep{color:var(--warn);border-color:#F5B94266}
+.stemBtn.err{color:#FF8A8E;border-color:#E5484D66}
+.stemSt{font-size:12px;font-weight:600;white-space:nowrap}
+.stemSt.ok{color:var(--ok)} .stemSt.prep{color:var(--warn)}
+.prepTitulo{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prepBar{height:8px;border-radius:4px;background:var(--ctrl);overflow:hidden}
+#prepFill{width:0;height:100%;background:var(--warn);transition:width .3s}
+.prepPanel.pausa #prepFill{background:var(--muted)}
+.prepPanel{gap:6px}
+
 /* ---------- Pantallas bajas (laptop 1536×816 con escala 125 %) ---------- */
 @media (max-height:900px){
   .app{gap:6px;padding:6px;--fh:84px}

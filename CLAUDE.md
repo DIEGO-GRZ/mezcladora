@@ -112,12 +112,13 @@ mezcladora-personal/
   prototipo/mezcladora.html     # referencia, no se borra
   diseno/Main.dc.html           # diseño de la interfaz (solo referencia)
   app/                          # Electron
-    main/                       # proceso principal: ventanas, pantallas, archivos, SQLite, arranca el preparador
+    main/                       # proceso principal: ventanas, pantallas, archivos, SQLite, preparador.js (administra Python)
     preload/                    # puente seguro (contextBridge)
     renderer/                   # interfaz de la mezcladora + motor de audio
     video/                      # ventana de salida de video
-  preparador/                   # servicio local en Python (FastAPI)
-    separar.py                  # Demucs / audio-separator
+  preparador/                   # Python como proceso hijo de Electron (.venv no se sube a Git)
+    servicio.py                 # recibe órdenes JSON por stdin, responde eventos JSON por stdout
+    separar.py                  # Demucs htdemucs → voz/bateria/bajo/melodia.opus
     analisis.py                 # BPM, tono, detección de voz
   datos/                        # en .gitignore: biblioteca.sqlite, stems/
 ```
@@ -125,7 +126,8 @@ mezcladora-personal/
 - **Electron:** `contextIsolation: true`, `nodeIntegration: false`, todo acceso a disco por IPC desde el preload. Servir archivos locales con un protocolo propio (`protocol.handle`) que soporte peticiones por rangos para poder adelantar en videos largos.
 - **Segunda pantalla:** usar el módulo `screen` de Electron para abrir la ventana de video en pantalla completa en la pantalla externa y moverla sola si se conecta o desconecta.
 - **Biblioteca:** SQLite (canciones, marcas, cues, BPM, tono, resolución del video, estado de stems). Migrar las marcas guardadas en `localStorage` del prototipo si es posible.
-- **Preparador:** FastAPI local que Electron arranca y detiene solo; cola de trabajos, una canción a la vez, pausable mientras se reproduce.
+- **Preparador (decidido: proceso hijo, no FastAPI):** Electron arranca `preparador/servicio.py` solo cuando hay algo en la cola y lo apaga tras 2 min sin trabajo. Se hablan por stdin/stdout (sin puertos; si la mezcladora se cae, Python termina al cerrarse su entrada). Una canción a la vez; mientras suena música no empieza nada nuevo y lo que está en curso se pausa entre bloques de Demucs. La cola y el estado (`stems`: cola/preparando/listo/error) viven en SQLite. Stems en `datos/stems/<sha1(nombre|tamaño)[:16]>/`.
+  - Entorno: Python 3.11, PyTorch 2.5.1 + CUDA 12.4, Demucs 4.0.1, ffmpeg de `imageio-ffmpeg` (versiones exactas en `preparador/requirements.txt`). En la RTX 2050: ~1/6 de la duración de la canción, ~550 MB de VRAM, ~3 MB por stem.
   - Demucs `htdemucs` (4 stems: voz, batería, bajo, otros) con `--segment 7` para caber en 4 GB de VRAM. El repo original está archivado desde enero 2025: fijar versión.
   - Opción de alta calidad para voz/instrumental: BS-RoFormer vía `audio-separator` (MIT, dar crédito a UVR).
   - Respaldo en CPU si falla CUDA (≈1.5× la duración de la canción).

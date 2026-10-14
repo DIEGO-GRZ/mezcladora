@@ -21,6 +21,25 @@ contextBridge.exposeInMainWorld('mezcladora', {
     // Corrige título/artista a mano; datos vacíos = volver a lo automático → { titulo, artista, nombre_manual }
     editarNombre: (id, datos) => ipcRenderer.invoke('biblioteca:editarNombre', id, datos),
   },
+  preparador: {
+    // { disponible, activo, cargando, pausado, musica, actual: { id, titulo, pct, etapa }, enCola }
+    estado: () => ipcRenderer.invoke('preparador:estado'),
+    encolar: ids => ipcRenderer.invoke('preparador:encolar', ids),
+    cancelar: id => ipcRenderer.invoke('preparador:cancelar', id),
+    // Avisar si hay música sonando (el preparador se pausa)
+    musica: sonando => ipcRenderer.send('preparador:musica', !!sonando),
+    alCambiarEstado: cb => {
+      const f = (_e, e) => cb(e);
+      ipcRenderer.on('preparador:estado', f);
+      return () => ipcRenderer.removeListener('preparador:estado', f);
+    },
+    // { id, stems, stems_info } cuando cambia el estado de una canción
+    alCambiarCancion: cb => {
+      const f = (_e, c) => cb(c);
+      ipcRenderer.on('preparador:cancion', f);
+      return () => ipcRenderer.removeListener('preparador:cancion', f);
+    },
+  },
   video: {
     // { conectada, nombre, ancho, alto } de la pantalla externa
     estado: () => ipcRenderer.invoke('video:estado'),

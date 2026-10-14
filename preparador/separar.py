@@ -12,11 +12,13 @@ import json
 import subprocess
 import sys
 import time
+import types
 from pathlib import Path
 
 import numpy as np
 import torch
 import imageio_ffmpeg
+import demucs.apply
 from demucs.apply import apply_model
 from demucs.pretrained import get_model
 
@@ -32,6 +34,27 @@ NOMBRES = {"vocals": "voz", "drums": "bateria", "bass": "bajo", "other": "melodi
 SIN_VENTANA = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 _modelo = None
+
+# --- Punto de control entre bloques ---
+# Demucs recorre la canción en bloques de SEGMENTO segundos usando tqdm. Lo reemplazamos por un recorrido
+# que antes de cada bloque llama a _control(hechos, total): ahí se reporta el avance, se espera si hay
+# que pausar o se lanza Cancelado. Sin control, se comporta igual que antes.
+_control = None
+
+
+class Cancelado(Exception):
+    pass
+
+
+def _recorrer(iterable, **_):
+    elementos = list(iterable)
+    for i, x in enumerate(elementos):
+        if _control:
+            _control(i, len(elementos))
+        yield x
+
+
+demucs.apply.tqdm = types.SimpleNamespace(tqdm=_recorrer)
 
 
 def avisar(**datos) -> None:
@@ -81,11 +104,14 @@ def separar_en(wav: torch.Tensor, dispositivo: str) -> torch.Tensor:
     entrada = ((wav - media) / desv)[None]
     with torch.no_grad():
         salida = apply_model(modelo(), entrada, device=dispositivo, segment=SEGMENTO, split=True,
-                             overlap=0.25, shifts=1, progress=False)[0]
+                             overlap=0.25, shifts=1, progress=True)[0]
     return salida * desv + media
 
 
-def separar(ruta: Path, carpeta: Path) -> dict:
+def separar(ruta: Path, carpeta: Path, control=None) -> dict:
+    """control(hechos, total) se llama antes de cada bloque (avance, pausa, cancelación)."""
+    global _control
+    _control = control
     inicio = time.time()
     carpeta.mkdir(parents=True, exist_ok=True)
     avisar(etapa="leyendo", archivo=ruta.name)
@@ -96,6 +122,8 @@ def separar(ruta: Path, carpeta: Path) -> dict:
     avisar(etapa="separando", dispositivo=dispositivo, duracion=round(duracion, 1))
     try:
         stems = separar_en(wav, dispositivo)
+    except Cancelado:
+        raise
     except (RuntimeError, torch.cuda.OutOfMemoryError) as err:
         if dispositivo != "cuda":
             raise

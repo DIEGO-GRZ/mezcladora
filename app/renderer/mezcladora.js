@@ -169,7 +169,7 @@ function createDeck(id) {
     audio.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * audio.duration;
   });
   $('.vol', fcol).addEventListener('input', e => setVol(d, e.target.value / 100));
-  ['play', 'pause', 'ended'].forEach(ev => audio.addEventListener(ev, () => { updatePlayBtn(d); renderDeckState(d); }));
+  ['play', 'pause', 'ended'].forEach(ev => audio.addEventListener(ev, () => { updatePlayBtn(d); renderDeckState(d); avisarMusica(); }));
   audio.addEventListener('durationchange', () => renderMark(d));
   audio.addEventListener('loadeddata', () => {
     d.isVideo = audio.videoWidth > 0; // confirma si el archivo realmente trae imagen
@@ -221,7 +221,7 @@ function cargarEnDeck(d, m) {
   t.title = file.name;
   $('.sub', d.el).textContent = m.artista || '';
   d.el.classList.add('loaded');
-  renderMark(d); updatePlayBtn(d); renderBadge(d); renderDeckState(d);
+  renderMark(d); updatePlayBtn(d); renderBadge(d); renderDeckState(d); renderStemsTag(d);
   return true;
 }
 function renderBadge(d) {
@@ -532,7 +532,7 @@ const CATEGORIAS = [
   { id: 'todo', nombre: 'Todo', filtro: () => true },
   { id: 'video', nombre: 'Videos', filtro: c => c.tipo === 'video' },
   { id: 'audio', nombre: 'Música', filtro: c => c.tipo === 'audio' },
-  { id: 'stems', nombre: 'Con stems', pend: 2 },
+  { id: 'stems', nombre: 'Con stems', filtro: c => c.stems === 'listo' },
   { id: 'listas', nombre: 'Mis listas', pend: 7 },
   { id: 'escena', nombre: 'Lista de escena', pend: 6 },
   { id: 'efectos', nombre: 'Efectos de sonido', pend: 5 },
@@ -631,7 +631,7 @@ function renderBiblioteca() {
     const dk = enDeck(c.id);
     const video = c.tipo !== 'video' ? '<td class="tSm na">audio</td>'
       : `<td class="tSm${c.alto && c.alto < 720 ? ' lowres' : ''}">${c.alto ? `${c.alto}p` : 'video'}</td>`;
-    return `<tr data-i="${i}" draggable="${!c.falta}" class="${i === lib.sel ? 'sel' : ''}${c.falta ? ' falta' : ''}${dk ? ' enDeck' : ''}">
+    return `<tr data-i="${i}" data-id="${c.id}" draggable="${!c.falta}" class="${i === lib.sel ? 'sel' : ''}${c.falta ? ' falta' : ''}${dk ? ' enDeck' : ''}">
       <td class="cDeck ${dk.slice(0, 1)}">${dk}</td>
       <td class="tTit" title="${esc(c.nombre)}">${esc(tituloDe(c))}${c.nombre_manual ? '<span class="manual" title="Corregido a mano">✎</span>' : ''}${c.falta ? ' <span class="tag">NO ENCONTRADO</span>' : ''}</td>
       <td class="tArt">${esc(c.artista)}</td>
@@ -639,10 +639,87 @@ function renderBiblioteca() {
       <td class="num na">—</td>
       <td class="tSm na">—</td>
       ${video}
-      <td class="tSm na">—</td>
+      <td class="tStems">${celdaStems(c)}</td>
       <td class="libLoad"><button class="edit" data-edit title="Corregir título y artista">✎</button><button data-deck="A">A</button><button data-deck="B">B</button></td>
     </tr>`;
   }).join('');
+}
+
+// ---------- Stems: estado por canción ----------
+function celdaStems(c) {
+  if (c.falta) return '';
+  const info = (() => { try { return JSON.parse(c.stems_info || 'null'); } catch { return null; } })();
+  switch (c.stems) {
+    case 'listo': return `<span class="stemSt ok" title="Stems listos${info?.mb ? ` · ${info.mb} MB` : ''}">Listo</span>`;
+    case 'cola': return '<button class="stemBtn cola" data-cancel title="Clic para quitar de la cola">En cola</button>';
+    case 'preparando': return `<button class="stemBtn cola" data-cancel title="Clic para cancelar">Preparando ${prep.actual?.id === c.id ? `${prep.actual.pct}%` : '…'}</button>`;
+    case 'error': return `<button class="stemBtn err" data-prep title="${esc(info?.mensaje || 'Error')} · clic para reintentar">Error</button>`;
+    default: return '<button class="stemBtn" data-prep title="Separar voz, melodía, bajo y batería">Preparar</button>';
+  }
+}
+
+async function prepararCancion(c) {
+  if (!c || c.falta) return;
+  if (c.stems === 'listo') return toast('Esa canción ya tiene stems');
+  if (c.stems === 'cola' || c.stems === 'preparando') return toast('Esa canción ya está en la cola');
+  if (!prep.disponible) return toast('El preparador de stems no está instalado (falta preparador/.venv)');
+  try {
+    const n = await window.mezcladora.preparador.encolar([c.id]);
+    if (n) toast(`En cola para stems: ${tituloDe(c)}`);
+  } catch { toast('No se pudo poner en la cola'); }
+}
+async function cancelarPreparacion(c) {
+  try { await window.mezcladora.preparador.cancelar(c.id); } catch { toast('No se pudo quitar de la cola'); }
+}
+function prepararSeleccion() {
+  const c = lib.vista[lib.sel];
+  if (!c) return toast('No hay ninguna canción elegida');
+  prepararCancion(c);
+}
+
+// Estado general del preparador → panel de la derecha
+let prep = { disponible: true, actual: null, enCola: 0 };
+function mostrarPreparador(e) {
+  prep = e || prep;
+  const panel = $('.prepPanel'), a = prep.actual;
+  $('#prepCola').textContent = prep.enCola ? `${prep.enCola} en cola` : '';
+  $('#prepTitulo').textContent = !prep.disponible ? 'Preparador no instalado'
+    : a ? a.titulo : prep.cargando ? 'Cargando la IA…' : 'Nada en preparación';
+  $('#prepFill').style.width = a ? `${a.pct || 0}%` : '0%';
+  $('#prepInfo').textContent = a ? `${a.pct || 0}% · ${a.etapa === 'leyendo' ? 'leyendo' : 'GPU'}` : '';
+  const enPausa = prep.musica && (a || prep.enCola);
+  panel.classList.toggle('pausa', !!enPausa);
+  $('#prepNota').textContent = enPausa ? 'En pausa: hay música sonando. Sigue sola al detenerla.' : 'Se pausa sola mientras haya música sonando.';
+  // Porcentaje en la fila de la canción que se prepara (sin redibujar toda la tabla)
+  if (a) {
+    const celda = $(`#libRows tr[data-id="${a.id}"] .tStems button`);
+    if (celda) celda.textContent = `Preparando ${a.pct || 0}%`;
+  }
+}
+
+// Cambio de estado de una canción (en cola, preparando, listo, error)
+function alCambiarCancionStems({ id, stems, stems_info }) {
+  const c = lib.canciones.find(x => x.id === id);
+  if (!c) return;
+  c.stems = stems; c.stems_info = stems_info;
+  if (stems === 'listo') toast(`Stems listos: ${tituloDe(c)}`);
+  if (stems === 'error') toast(`No se pudieron preparar los stems de ${tituloDe(c)}`);
+  Object.values(decks).forEach(renderStemsTag);
+  filtrarBiblioteca();
+}
+
+function renderStemsTag(d) {
+  const c = d.libId != null && lib.canciones.find(x => x.id === d.libId);
+  $('.stemsTag', d.el).textContent = c && c.stems === 'listo' ? 'STEMS LISTOS' : '';
+}
+
+// La mezcladora avisa al preparador si hay algo sonando (para pausarse)
+let musicaAvisada = null;
+function avisarMusica() {
+  const sonando = Object.values(decks).some(d => !d.audio.paused);
+  if (sonando === musicaAvisada) return;
+  musicaAvisada = sonando;
+  window.mezcladora.preparador.musica(sonando);
 }
 
 function moverSeleccion(delta) {
@@ -732,6 +809,8 @@ $('#libRows').addEventListener('click', e => {
   moverSeleccion(Number(fila.dataset.i) - lib.sel);
   const c = lib.vista[lib.sel];
   if (e.target.closest('[data-edit]')) return abrirEditarNombre(c);
+  if (e.target.closest('[data-prep]')) return prepararCancion(c);
+  if (e.target.closest('[data-cancel]')) return cancelarPreparacion(c);
   const b = e.target.closest('button[data-deck]');
   if (b) { initAudio(); cargarSeleccion(b.dataset.deck); }
 });
@@ -819,6 +898,7 @@ document.addEventListener('keydown', e => {
     case 'loadA': cargarSeleccion('A'); break;
     case 'loadB': cargarSeleccion('B'); break;
     case 'config': abrirConfig(); break;
+    case 'prep': prepararSeleccion(); break;
   }
 });
 
@@ -906,6 +986,9 @@ detectDevices(false);
 abrirVentanaVideo();
 // La biblioteca se muestra de inmediato y luego se revisan las carpetas en segundo plano
 cargarBiblioteca().then(() => escanearBiblioteca(false));
+window.mezcladora.preparador.alCambiarEstado(mostrarPreparador);
+window.mezcladora.preparador.alCambiarCancion(alCambiarCancionStems);
+window.mezcladora.preparador.estado().then(mostrarPreparador).catch(() => {});
 window.mezcladora.video.alCambiar(e => mostrarEstadoVideo(e, true));
 window.mezcladora.video.estado().then(e => mostrarEstadoVideo(e, false)).catch(() => mostrarEstadoVideo(null, false));
 render();

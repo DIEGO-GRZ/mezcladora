@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const { Readable } = require('node:stream');
 const { pathToFileURL } = require('node:url');
 const biblioteca = require('./biblioteca');
+const preparador = require('./preparador');
 
 const DEV = !app.isPackaged;
 const APP_DIR = path.resolve(__dirname, '..');
@@ -13,6 +14,7 @@ const APP_DIR = path.resolve(__dirname, '..');
 // compartan origen (la mezcladora le pasa la imagen de los decks directamente)
 const ORIGEN = 'app://mezcladora';
 const URL_VIDEO = `${ORIGEN}/video/index.html`;
+const CSP = "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; media-src 'self' blob: mediastream:; img-src 'self' data: blob:";
 // Datos locales (biblioteca, stems): en desarrollo la carpeta datos/ del proyecto; instalada, la del usuario
 const CARPETA_DATOS = DEV ? path.resolve(APP_DIR, '..', 'datos') : path.join(app.getPath('userData'), 'datos');
 const TIPOS_MEDIO = {
@@ -70,7 +72,12 @@ La mezcladora funciona igual cargando canciones por arrastre.`);
       if (medio) return await servirMedio(medio[1], req);
       const archivo = path.resolve(APP_DIR, '.' + decodeURIComponent(u.pathname));
       if (!archivo.startsWith(APP_DIR + path.sep)) return new Response('Prohibido', { status: 403 });
-      return await net.fetch(pathToFileURL(archivo).toString());
+      const r = await net.fetch(pathToFileURL(archivo).toString());
+      if (!archivo.endsWith('.html')) return r;
+      // La política de contenido también va como encabezado (la etiqueta <meta> sola deja avisos de Electron)
+      const headers = new Headers(r.headers);
+      headers.set('Content-Security-Policy', CSP);
+      return new Response(r.body, { status: r.status, headers });
     } catch {
       return new Response('No encontrado', { status: 404 });
     }
@@ -86,6 +93,17 @@ La mezcladora funciona igual cargando canciones por arrastre.`);
   });
   ipcMain.handle('biblioteca:guardarInfo', (_e, id, info) => conBiblioteca(() => biblioteca.guardarInfo(id, info || {}), null));
   ipcMain.handle('biblioteca:editarNombre', (_e, id, datos) => conBiblioteca(() => biblioteca.editarNombre(id, datos), null));
+
+  // Preparador de stems (Python en segundo plano)
+  preparador.iniciar({
+    carpetaPreparador: path.resolve(APP_DIR, '..', 'preparador'),
+    carpetaStems: path.join(CARPETA_DATOS, 'stems'),
+    avisar: (canal, datos) => { if (win && !win.isDestroyed()) win.webContents.send(canal, datos); },
+  });
+  ipcMain.handle('preparador:estado', () => preparador.estado());
+  ipcMain.handle('preparador:encolar', (_e, ids) => conBiblioteca(() => preparador.encolar(Array.isArray(ids) ? ids : [ids]), 0));
+  ipcMain.handle('preparador:cancelar', (_e, id) => conBiblioteca(() => preparador.cancelar(id), false));
+  ipcMain.on('preparador:musica', (_e, sonando) => preparador.alCambiarMusica(sonando));
 
   ipcMain.handle('video:estado', () => estadoVideo);
   ipcMain.handle('video:recolocar', () => { colocarVideo(true); return estadoVideo; });
@@ -292,4 +310,4 @@ async function servirMedio(id, req) {
 }
 
 app.on('window-all-closed', () => app.quit());
-app.on('will-quit', () => biblioteca.cerrar());
+app.on('will-quit', () => { preparador.detener(); biblioteca.cerrar(); });

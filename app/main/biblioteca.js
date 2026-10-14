@@ -2,6 +2,7 @@
 // Biblioteca de canciones en SQLite (node:sqlite, integrado en Electron: no hay que compilar nada).
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { DatabaseSync } = require('node:sqlite');
 const { separar } = require('./nombres');
 
@@ -22,9 +23,11 @@ function abrir(carpetaDatos) {
     fs.copyFileSync(archivo, path.join(carpetaDatos, `biblioteca.antes-v${VERSION}.sqlite`));
   }
   migrar();
+  // Si la app se cerró a media preparación, esa canción vuelve a la cola
+  db.prepare("UPDATE canciones SET stems = 'cola' WHERE stems = 'preparando'").run();
 }
 
-const VERSION = 2; // versión actual del esquema
+const VERSION = 3; // versión actual del esquema
 
 // Cada versión del esquema es un paso; así las bases viejas se actualizan sin perder datos
 function migrar() {
@@ -73,6 +76,17 @@ function migrar() {
       throw err;
     }
   }
+  if (version < 3) {
+    // Estado de los stems: NULL (sin preparar) | 'cola' | 'preparando' | 'listo' | 'error'
+    db.exec(`
+      BEGIN;
+      ALTER TABLE canciones ADD COLUMN stems TEXT;
+      ALTER TABLE canciones ADD COLUMN stems_info TEXT;     -- JSON: estadísticas o mensaje de error
+      ALTER TABLE canciones ADD COLUMN stems_orden INTEGER; -- cuándo entró a la cola
+      PRAGMA user_version = 3;
+      COMMIT;
+    `);
+  }
 }
 
 function carpetas() {
@@ -88,6 +102,7 @@ function agregarCarpeta(ruta) {
 function canciones() {
   return db.prepare(`
     SELECT c.id, c.nombre, c.titulo, c.artista, c.nombre_manual, c.tipo, c.tamano, c.duracion, c.ancho, c.alto, c.falta,
+           c.stems, c.stems_info,
            c.carpeta_id, k.ruta AS carpeta
     FROM canciones c JOIN carpetas k ON k.id = c.carpeta_id
     ORDER BY c.falta, COALESCE(NULLIF(c.artista, ''), c.titulo) COLLATE NOCASE, c.titulo COLLATE NOCASE
@@ -176,9 +191,62 @@ async function escanear() {
   return resumen;
 }
 
+// ---------- Stems ----------
+// Carpeta de stems de una canción: se nombra por nombre|tamaño (igual que las marcas), así sobrevive
+// a mover la carpeta de música o reconstruir la biblioteca
+function claveStems(nombre, tamano) {
+  return crypto.createHash('sha1').update(`${nombre}|${tamano}`).digest('hex').slice(0, 16);
+}
+const STEMS = ['voz', 'bateria', 'bajo', 'melodia'];
+
+function encolarStems(ids) {
+  const poner = db.prepare(`UPDATE canciones SET stems = 'cola', stems_info = NULL, stems_orden = ?
+                            WHERE id = ? AND falta = 0 AND (stems IS NULL OR stems = 'error')`);
+  let n = 0;
+  db.exec('BEGIN');
+  try {
+    ids.forEach((id, i) => { n += Number(poner.run(Date.now() + i, Number(id)).changes); });
+    db.exec('COMMIT');
+  } catch (err) { db.exec('ROLLBACK'); throw err; }
+  return n;
+}
+
+function siguienteEnCola() {
+  return db.prepare(`SELECT id, ruta, nombre, tamano, titulo FROM canciones
+                     WHERE stems = 'cola' AND falta = 0 ORDER BY stems_orden LIMIT 1`).get() || null;
+}
+
+function contarCola() {
+  return db.prepare("SELECT COUNT(*) AS n FROM canciones WHERE stems = 'cola'").get().n;
+}
+
+function marcarStems(id, estado, info = null) {
+  db.prepare('UPDATE canciones SET stems = ?, stems_info = ? WHERE id = ?')
+    .run(estado, info == null ? null : JSON.stringify(info), Number(id));
+}
+
+// Si borraron la carpeta de stems a mano, la canción vuelve a "sin preparar"
+function verificarStems(carpetaStems) {
+  const listos = db.prepare("SELECT id, nombre, tamano FROM canciones WHERE stems = 'listo'").all();
+  const quitar = db.prepare('UPDATE canciones SET stems = NULL, stems_info = NULL WHERE id = ?');
+  let n = 0;
+  for (const c of listos) {
+    const dir = path.join(carpetaStems, claveStems(c.nombre, c.tamano));
+    if (!STEMS.every(s => fs.existsSync(path.join(dir, `${s}.opus`)))) { quitar.run(c.id); n++; }
+  }
+  return n;
+}
+
+function cancionStems(id) {
+  return db.prepare('SELECT id, nombre, tamano, stems FROM canciones WHERE id = ?').get(Number(id)) || null;
+}
+
 function cerrar() {
   try { db?.close(); } catch {}
   db = null;
 }
 
-module.exports = { abrir, carpetas, agregarCarpeta, canciones, rutaDe, guardarInfo, editarNombre, escanear, cerrar };
+module.exports = {
+  abrir, carpetas, agregarCarpeta, canciones, rutaDe, guardarInfo, editarNombre, escanear, cerrar,
+  claveStems, STEMS, encolarStems, siguienteEnCola, contarCola, marcarStems, verificarStems, cancionStems,
+};
