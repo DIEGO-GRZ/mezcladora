@@ -66,7 +66,9 @@ function connectDeck(d) {
   // pre = lo que suena del deck: el original o la suma de stems (ver "Stems en vivo")
   d.pre = ctx.createGain();
   d.origGain = ctx.createGain();
-  d.src.connect(d.origGain).connect(d.pre);
+  crearGrafoRespaldo(d);
+  d.src.connect(d.fb.entrada);
+  d.fb.salida.connect(d.origGain).connect(d.pre);
   d.pre.connect(d.volGain).connect(d.xfGain).connect(masterGain);
   d.analyser = ctx.createAnalyser(); d.analyser.fftSize = 1024;
   d.volGain.connect(d.analyser); // medidor del deck: después del volumen, antes del crossfader
@@ -163,10 +165,10 @@ function prepararStemsDeck(d, c) {
 
 function accionStem(d, act) {
   if (!needTrack(d)) return;
-  if (!tieneStems(d)) {
+  if (!tieneStems(d) && !RESPALDO_POSIBLE.has(act)) {
     const c = lib.canciones.find(x => x.id === d.libId);
     const estado = c?.stems === 'cola' || c?.stems === 'preparando' ? 'se están preparando' : `no están preparados (${Teclas.etiqueta('prep')} los prepara)`;
-    return toast(`Deck ${d.id}: los stems de esta canción ${estado}`);
+    return toast(`Deck ${d.id}: ${act === 'stemMel' ? 'Melodía' : 'Batería'} necesita stems; los de esta canción ${estado}`);
   }
   if (act === 'acapella' || act === 'instru') {
     if (d.stModo === act) {                     // apagar el modo: volver a como estaba
@@ -191,6 +193,7 @@ function accionStem(d, act) {
 // Lleva los volúmenes de cada stem a su estado; si todo está normal suena el original
 function aplicarStems(d) {
   if (!ctx || !d.sg) return;
+  aplicarRespaldo(d);
   const t = ctx.currentTime;
   const poner = (param, v) => { holdParam(param); param.setTargetAtTime(v, t, FUNDIDO_STEMS / 3); };
   const s = d.st;
@@ -203,6 +206,62 @@ function aplicarStems(d) {
   const usarStems = tieneStems(d) && Object.keys(STEMS_BASE).some(k => !s[k]);
   poner(d.stemsSum.gain, usarStems ? 1 : 0);
   poner(d.origGain.gain, usarStems ? 0 : 1);
+}
+
+// --- Filtro de respaldo: canciones sin stems ---
+// Aproximaciones con filtros sobre el original. Melodía y Batería no se pueden separar sin la IA.
+//   Voz / Instrumental → "karaoke": se cancela el centro (L−R), conservando los graves del centro (<200 Hz)
+//   Acapella           → centro (L+R) en la banda de la voz (250 Hz – 5 kHz)
+//   Bajo → paso alto 150 Hz · Kick → estante grave −30 dB (100 Hz) · HiHat → estante agudo −30 dB (7 kHz)
+const RESPALDO_POSIBLE = new Set(['stemVoz', 'stemBajo', 'kick', 'hihat', 'acapella', 'instru']);
+
+function crearGrafoRespaldo(d) {
+  const f = (tipo, frec, q = Math.SQRT1_2) => { const b = ctx.createBiquadFilter(); b.type = tipo; b.frequency.value = frec; b.Q.value = q; return b; };
+  const g = (v = 1) => { const n = ctx.createGain(); n.gain.value = v; return n; };
+  const entrada = g(), sp = ctx.createChannelSplitter(2);
+  entrada.connect(sp);
+  const aEstereo = mono => { const m = ctx.createChannelMerger(2); mono.connect(m, 0, 0); mono.connect(m, 0, 1); return m; };
+
+  // Centro (L+R)/2 y lados (L−R)
+  const centro = g(), lados = g();
+  const L = g(0.5), R = g(0.5), Lm = g(1), Rm = g(-1);
+  sp.connect(L, 0); sp.connect(R, 1); L.connect(centro); R.connect(centro);
+  sp.connect(Lm, 0); sp.connect(Rm, 1); Lm.connect(lados); Rm.connect(lados);
+
+  // Caminos: normal (tal cual), karaoke y acapella; solo uno suena a la vez
+  const normal = g(1), karaoke = g(0), acapella = g(0);
+  entrada.connect(normal);
+  const ladosAgudos = f('highpass', 200), centroGraves = f('lowpass', 200), kSuma = g();
+  lados.connect(ladosAgudos).connect(kSuma);
+  centro.connect(centroGraves).connect(kSuma);
+  aEstereo(kSuma).connect(karaoke);
+  const aHp = f('highpass', 250), aLp = f('lowpass', 5000);
+  centro.connect(aHp).connect(aLp);
+  aEstereo(aLp).connect(acapella);
+
+  // En serie: bajo, kick, hihat (transparentes cuando están apagados)
+  const bajo = f('highpass', 10), kick = f('lowshelf', 100), hat = f('highshelf', 7000);
+  kick.gain.value = 0; hat.gain.value = 0;
+  const suma = g();
+  [normal, karaoke, acapella].forEach(n => n.connect(suma));
+  suma.connect(bajo).connect(kick).connect(hat);
+
+  d.fb = { entrada, salida: hat, normal, karaoke, acapella, bajo, kick, hat };
+}
+
+function aplicarRespaldo(d) {
+  if (!d.fb) return;
+  const t = ctx.currentTime, k = FUNDIDO_STEMS / 3;
+  const poner = (p, v) => { holdParam(p); p.setTargetAtTime(v, t, k); };
+  const activo = !tieneStems(d) && !!d.file, s = d.st;
+  const acap = activo && d.stModo === 'acapella';
+  const kara = activo && !acap && !s.voz;
+  poner(d.fb.normal.gain, acap || kara ? 0 : 1);
+  poner(d.fb.karaoke.gain, kara ? 1 : 0);
+  poner(d.fb.acapella.gain, acap ? 1 : 0);
+  poner(d.fb.bajo.frequency, activo && !acap && !s.bajo ? 150 : 10);
+  poner(d.fb.kick.gain, activo && !acap && !s.kick ? -30 : 0);
+  poner(d.fb.hat.gain, activo && !acap && !s.hat ? -30 : 0);
 }
 
 // --- Desfase real entre el original y los stems ---
@@ -238,16 +297,21 @@ function medirDesfase(d) {
 
 function renderStems(d) {
   const hay = tieneStems(d);
+  const usable = act => !!d.file && (hay || RESPALDO_POSIBLE.has(act));
+  const aprox = act => !hay && RESPALDO_POSIBLE.has(act) ? ' (aproximado: sin stems)' : '';
   for (const [act, k] of Object.entries(ACCION_STEM)) {
-    const b = $(`[data-act="${act}"]`, d.el);
-    b.disabled = !hay;
-    b.classList.toggle('mute', hay && !d.st[k]);
-    b.title = hay ? `${NOMBRE_STEM[k]}: ${d.st[k] ? 'suena' : 'apagado'}` : 'Prepara los stems de esta canción para usarlo';
+    const b = $(`[data-act="${act}"]`, d.el), ok = usable(act);
+    b.disabled = !ok;
+    b.classList.toggle('mute', ok && !d.st[k]);
+    b.classList.toggle('aprox', ok && !hay);
+    b.title = ok ? `${NOMBRE_STEM[k]}: ${d.st[k] ? 'suena' : 'apagado'}${aprox(act)}` : `${NOMBRE_STEM[k]}: prepara los stems de esta canción para usarlo`;
   }
   for (const act of ['acapella', 'instru']) {
-    const b = $(`[data-act="${act}"]`, d.el);
-    b.disabled = !hay;
-    b.classList.toggle('on', hay && d.stModo === act);
+    const b = $(`[data-act="${act}"]`, d.el), ok = usable(act);
+    b.disabled = !ok;
+    b.classList.toggle('on', ok && d.stModo === act);
+    b.classList.toggle('aprox', ok && !hay);
+    b.title = `${act === 'acapella' ? 'Acapella' : 'Instrumental'}${aprox(act)}`;
   }
 }
 

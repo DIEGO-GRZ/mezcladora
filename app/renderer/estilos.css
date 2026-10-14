@@ -329,3 +329,4 @@ select{background:var(--bg);color:var(--text);border:1px solid var(--line);borde
 .tecKey:hover{border-color:var(--text)}
 .tecKey.capt{border-color:var(--warn);color:var(--warn);animation:blink 1s infinite}
 .tecKey.cambiada{border-color:var(--a)}
+.stems .btn.aprox:not(:disabled){border-style:dashed}
