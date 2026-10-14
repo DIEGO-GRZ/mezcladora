@@ -260,6 +260,12 @@ select{background:var(--bg);color:var(--text);border:1px solid var(--line);borde
 .deck.soltar{box-shadow:0 0 0 3px var(--c) inset}
 .deck.soltar .drop{display:block;border-color:var(--c);color:var(--c)}
 
+/* ---------- Análisis ---------- */
+.lib td.compat{color:var(--ok);font-weight:600}
+.keyTag.compat{background:#4ADE8022;border-color:var(--ok);color:var(--ok)}
+.prepPanel.analizando .prepBar{background:linear-gradient(90deg,var(--ctrl) 0 40%,#F5B94255 50%,var(--ctrl) 60%) 0/250% 100%;animation:analizando 1.6s linear infinite}
+@keyframes analizando{to{background-position:-250% 0}}
+
 /* ---------- Stems: columna y preparación ---------- */
 .stemBtn{font:600 11px var(--sans);background:transparent;border:1px solid var(--line);border-radius:5px;color:var(--muted);padding:1px 7px;cursor:pointer;white-space:nowrap}
 .stemBtn:hover{border-color:var(--text);color:var(--text)}

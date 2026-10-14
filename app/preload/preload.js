@@ -33,6 +33,12 @@ contextBridge.exposeInMainWorld('mezcladora', {
       ipcRenderer.on('preparador:estado', f);
       return () => ipcRenderer.removeListener('preparador:estado', f);
     },
+    // { id, analisis, bpm, primer_beat, tono, camelot, inicio_voz } al terminar de analizar una canción
+    alCambiarAnalisis: cb => {
+      const f = (_e, a) => cb(a);
+      ipcRenderer.on('preparador:analisis', f);
+      return () => ipcRenderer.removeListener('preparador:analisis', f);
+    },
     // { id, stems, stems_info } cuando cambia el estado de una canción
     alCambiarCancion: cb => {
       const f = (_e, c) => cb(c);

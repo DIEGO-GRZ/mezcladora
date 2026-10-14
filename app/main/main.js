@@ -77,6 +77,9 @@ La mezcladora funciona igual cargando canciones por arrastre.`);
       if (u.host !== 'mezcladora') return new Response('No encontrado', { status: 404 });
       const medio = /^\/medio\/(\d+)$/.exec(u.pathname);
       if (medio) return await servirMedio(medio[1], req);
+      // app://mezcladora/onda/<clave> → forma de onda analizada
+      const onda = /^\/onda\/([0-9a-f]{16})$/.exec(u.pathname);
+      if (onda) return await servirArchivo(path.join(CARPETA_DATOS, 'analisis', `${onda[1]}.onda`), req);
       // app://mezcladora/stems/<clave>/<archivo>.opus → stems preparados (solo nombres conocidos)
       const stem = /^\/stems\/([0-9a-f]{16})\/(stems|prueba8)\.opus$/.exec(u.pathname);
       if (stem) return await servirArchivo(path.join(carpetaStems, stem[1], `${stem[2]}.opus`), req);
@@ -108,6 +111,7 @@ La mezcladora funciona igual cargando canciones por arrastre.`);
   preparador.iniciar({
     carpetaPreparador: path.resolve(APP_DIR, '..', 'preparador'),
     carpetaStems,
+    carpetaAnalisis: path.join(CARPETA_DATOS, 'analisis'),
     avisar: (canal, datos) => { if (win && !win.isDestroyed()) win.webContents.send(canal, datos); },
   });
   ipcMain.handle('preparador:estado', () => preparador.estado());

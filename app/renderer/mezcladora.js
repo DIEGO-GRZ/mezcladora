@@ -443,7 +443,7 @@ function createDeck(id) {
     audio.currentTime = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * audio.duration;
   });
   $('.vol', fcol).addEventListener('input', e => setVol(d, e.target.value / 100));
-  ['play', 'pause', 'ended'].forEach(ev => audio.addEventListener(ev, () => { updatePlayBtn(d); renderDeckState(d); avisarMusica(); }));
+  ['play', 'pause', 'ended'].forEach(ev => audio.addEventListener(ev, () => { updatePlayBtn(d); renderDeckState(d); avisarMusica(); revisarTonoAlAire(); }));
   audio.addEventListener('durationchange', () => renderMark(d));
   ['play', 'playing', 'pause', 'seeking', 'ended'].forEach(ev => audio.addEventListener(ev, () => seguirOriginal(d, ev)));
   stemsEl.addEventListener('error', () => { if (d.stemsUrl) { toast(`Deck ${id}: no se pudieron leer los stems`); d.stemsUrl = null; aplicarStems(d); renderStems(d); } });
@@ -502,7 +502,7 @@ function cargarEnDeck(d, m) {
   t.title = file.name;
   $('.sub', d.el).textContent = m.artista || '';
   d.el.classList.add('loaded');
-  renderMark(d); updatePlayBtn(d); renderBadge(d); renderDeckState(d); renderStemsTag(d);
+  renderMark(d); updatePlayBtn(d); renderBadge(d); renderDeckState(d); renderStemsTag(d); renderBpmDeck(d);
   return true;
 }
 function renderBadge(d) {
@@ -609,6 +609,7 @@ function updateOnAir() {
   decks.A.el.classList.toggle('live', a);
   decks.B.el.classList.toggle('live', b);
   Object.values(decks).forEach(renderDeckState);
+  revisarTonoAlAire();
   if (!state.trans) $('#autoTxt').textContent = state.xf < 0.5 ? 'TRANSICIÓN A → B' : 'TRANSICIÓN B → A';
   const vs = $('#vidShows'), va = decks.A.isVideo && a, vb = decks.B.isVideo && b;
   vs.textContent = state.blackout ? 'En negro' : va || vb ? `Muestra deck ${va && vb ? 'A + B' : va ? 'A' : 'B'}` : 'Sin video';
@@ -831,7 +832,7 @@ async function cargarBiblioteca() {
   try {
     [lib.canciones, lib.carpetas] = await Promise.all([window.mezcladora.biblioteca.canciones(), window.mezcladora.biblioteca.carpetas()]);
   } catch { lib.canciones = []; toast('No se pudo leer la biblioteca'); }
-  for (const c of lib.canciones) c._busca = plano(`${c.titulo} ${c.artista} ${c.nombre}`);
+  for (const c of lib.canciones) indexarBusqueda(c);
   filtrarBiblioteca();
 }
 
@@ -919,13 +920,72 @@ function renderBiblioteca() {
       <td class="tTit" title="${esc(c.nombre)}">${esc(tituloDe(c))}${c.nombre_manual ? '<span class="manual" title="Corregido a mano">✎</span>' : ''}${c.falta ? ' <span class="tag">NO ENCONTRADO</span>' : ''}</td>
       <td class="tArt">${esc(c.artista)}</td>
       <td class="num">${c.duracion ? fmt(c.duracion) : ''}</td>
-      <td class="num na">—</td>
-      <td class="tSm na">—</td>
+      ${celdaBpm(c)}
+      ${celdaTono(c)}
       ${video}
       <td class="tStems">${celdaStems(c)}</td>
       <td class="libLoad"><button class="edit" data-edit title="Corregir título y artista">✎</button><button data-deck="A">A</button><button data-deck="B">B</button></td>
     </tr>`;
   }).join('');
+}
+
+// ---------- Análisis: BPM y tono ----------
+// Se busca también por BPM ("128") y por tono ("8A", "Am")
+const indexarBusqueda = c => { c._busca = plano(`${c.titulo} ${c.artista} ${c.nombre} ${c.bpm ? Math.round(c.bpm) : ''} ${c.camelot || ''} ${c.tono || ''}`); };
+
+// Rueda Camelot: compatibles = mismo código, ±1 con la misma letra, o mismo número con la otra letra
+function camelotCompatible(a, b) {
+  const pa = /^(\d{1,2})([AB])$/.exec(a || ''), pb = /^(\d{1,2})([AB])$/.exec(b || '');
+  if (!pa || !pb) return false;
+  const na = +pa[1], nb = +pb[1], dist = Math.min((na - nb + 12) % 12, (nb - na + 12) % 12);
+  return pa[2] === pb[2] ? dist <= 1 : dist === 0;
+}
+// Tono de referencia: el del deck que más se oye al aire
+function tonoAlAire() {
+  const al = Object.values(decks).filter(d => isOnAir(d) && d.camelot).sort((x, y) => deckLevel(y) - deckLevel(x));
+  return al[0]?.camelot || null;
+}
+const textoTono = c => (c?.camelot ? `${c.camelot} · ${c.tono}` : '');
+function celdaBpm(c) {
+  if (c.bpm) return `<td class="num">${c.bpm.toFixed(1)}</td>`;
+  return `<td class="num na" title="${c.analisis === 'error' ? 'No se pudo analizar' : 'Por analizar'}">${c.analisis === 'error' ? '?' : '…'}</td>`;
+}
+function celdaTono(c) {
+  if (!c.camelot) return `<td class="tSm na">${c.analisis === 'error' ? '?' : '…'}</td>`;
+  const ok = camelotCompatible(c.camelot, refTono);
+  return `<td class="tSm${ok ? ' compat' : ''}" title="${ok ? 'Compatible con lo que suena' : ''}">${textoTono(c)}</td>`;
+}
+let refTono = null;
+// Si cambia el tono al aire, se recolorea la biblioteca (solo cuando cambia, no en cada cuadro)
+function revisarTonoAlAire() {
+  const t = tonoAlAire();
+  if (t === refTono) return;
+  refTono = t;
+  renderBiblioteca();
+  Object.values(decks).forEach(renderBpmDeck);
+}
+function renderBpmDeck(d) {
+  const c = d.libId != null ? lib.canciones.find(x => x.id === d.libId) : null;
+  d.bpm = c?.bpm || null; d.camelot = c?.camelot || null; d.tono = c?.tono || null; d.primerBeat = c?.primer_beat ?? null;
+  const b = $('.bpm', d.el), k = $('.keyTag', d.el);
+  b.textContent = d.bpm ? d.bpm.toFixed(1) : '—';
+  b.classList.toggle('na', !d.bpm);
+  const otro = Object.values(decks).find(x => x !== d && isOnAir(x) && x.camelot);
+  const ok = !!(d.camelot && otro && camelotCompatible(d.camelot, otro.camelot));
+  k.textContent = d.camelot ? `${textoTono(c)}${ok ? ' ✓' : ''}` : '—';
+  k.classList.toggle('compat', ok);
+  k.title = d.camelot ? (ok ? `Compatible con el deck ${otro.id}` : 'Tono en notación Camelot') : 'Por analizar';
+  $('.dBpm', d.el).title = d.bpm ? `${d.bpm.toFixed(2)} BPM` : 'BPM y tono: por analizar';
+}
+function alAnalizar(a) {
+  const c = lib.canciones.find(x => x.id === a.id);
+  if (!c) return;
+  Object.assign(c, { analisis: a.analisis }, a.analisis === 'listo'
+    ? { bpm: a.bpm, primer_beat: a.primer_beat, tono: a.tono, camelot: a.camelot, inicio_voz: a.inicio_voz } : {});
+  indexarBusqueda(c);
+  const fila = $(`#libRows tr[data-id="${c.id}"]`);
+  if (fila) { fila.cells[4].outerHTML = celdaBpm(c); fila.cells[5].outerHTML = celdaTono(c); }
+  Object.values(decks).forEach(d => { if (d.libId === c.id) renderBpmDeck(d); });
 }
 
 // ---------- Stems: estado por canción ----------
@@ -965,16 +1025,19 @@ let prep = { disponible: true, actual: null, enCola: 0 };
 function mostrarPreparador(e) {
   prep = e || prep;
   const panel = $('.prepPanel'), a = prep.actual;
-  $('#prepCola').textContent = prep.enCola ? `${prep.enCola} en cola` : '';
+  const partes = [prep.enCola ? `${prep.enCola} en cola` : '', prep.porAnalizar ? `${prep.porAnalizar} por analizar` : ''].filter(Boolean);
+  $('#prepCola').textContent = partes.join(' · ');
+  const analizando = a?.tipo === 'analizar';
   $('#prepTitulo').textContent = !prep.disponible ? 'Preparador no instalado'
-    : a ? a.titulo : prep.cargando ? 'Cargando la IA…' : 'Nada en preparación';
-  $('#prepFill').style.width = a ? `${a.pct || 0}%` : '0%';
-  $('#prepInfo').textContent = a ? `${a.pct || 0}% · ${a.etapa === 'leyendo' ? 'leyendo' : 'GPU'}` : '';
-  const enPausa = prep.musica && (a || prep.enCola);
+    : a ? `${analizando ? 'Analizando: ' : ''}${a.titulo}` : prep.cargando ? 'Cargando…' : 'Nada en preparación';
+  $('#prepFill').style.width = a && !analizando ? `${a.pct || 0}%` : '0%';
+  panel.classList.toggle('analizando', !!analizando);
+  $('#prepInfo').textContent = !a ? '' : analizando ? 'BPM, tono y forma de onda · procesador' : `${a.pct || 0}% · ${a.etapa === 'leyendo' ? 'leyendo' : 'GPU'}`;
+  const enPausa = prep.musica && (a || prep.enCola || prep.porAnalizar);
   panel.classList.toggle('pausa', !!enPausa);
   $('#prepNota').textContent = enPausa ? 'En pausa: hay música sonando. Sigue sola al detenerla.' : 'Se pausa sola mientras haya música sonando.';
   // Porcentaje en la fila de la canción que se prepara (sin redibujar toda la tabla)
-  if (a) {
+  if (a && a.tipo === 'separar') {
     const celda = $(`#libRows tr[data-id="${a.id}"] .tStems button`);
     if (celda) celda.textContent = `Preparando ${a.pct || 0}%`;
   }
@@ -1070,7 +1133,7 @@ async function guardarNombre(auto) {
     const r = await window.mezcladora.biblioteca.editarNombre(c.id, auto ? {} : { titulo, artista });
     if (!r) throw new Error();
     Object.assign(c, r);
-    c._busca = plano(`${c.titulo} ${c.artista} ${c.nombre}`);
+    indexarBusqueda(c);
     // Si está cargada en un deck, actualizar su encabezado
     for (const d of Object.values(decks)) if (d.libId === c.id) { $('.title', d.el).textContent = c.titulo; $('.sub', d.el).textContent = c.artista; }
     cerrarEditarNombre();
@@ -1378,6 +1441,7 @@ abrirVentanaVideo();
 cargarBiblioteca().then(() => escanearBiblioteca(false));
 window.mezcladora.preparador.alCambiarEstado(mostrarPreparador);
 window.mezcladora.preparador.alCambiarCancion(alCambiarCancionStems);
+window.mezcladora.preparador.alCambiarAnalisis(alAnalizar);
 window.mezcladora.preparador.estado().then(mostrarPreparador).catch(() => {});
 actualizarEspacio();
 window.mezcladora.video.alCambiar(e => mostrarEstadoVideo(e, true));

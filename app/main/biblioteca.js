@@ -27,7 +27,7 @@ function abrir(carpetaDatos) {
   db.prepare("UPDATE canciones SET stems = 'cola' WHERE stems = 'preparando'").run();
 }
 
-const VERSION = 3; // versión actual del esquema
+const VERSION = 4; // versión actual del esquema
 
 // Cada versión del esquema es un paso; así las bases viejas se actualizan sin perder datos
 function migrar() {
@@ -87,6 +87,21 @@ function migrar() {
       COMMIT;
     `);
   }
+  if (version < 4) {
+    // Análisis (etapa 3). analisis: NULL = pendiente (se hace solo) | 'listo' | 'error'
+    db.exec(`
+      BEGIN;
+      ALTER TABLE canciones ADD COLUMN bpm REAL;
+      ALTER TABLE canciones ADD COLUMN primer_beat REAL;   -- segundos: dónde cae el primer pulso de la rejilla
+      ALTER TABLE canciones ADD COLUMN tono TEXT;          -- 'Am', 'F#'
+      ALTER TABLE canciones ADD COLUMN camelot TEXT;       -- '8A', '2B'
+      ALTER TABLE canciones ADD COLUMN inicio_voz REAL;    -- segundos (solo con stems)
+      ALTER TABLE canciones ADD COLUMN analisis TEXT;
+      ALTER TABLE canciones ADD COLUMN analisis_info TEXT;
+      PRAGMA user_version = 4;
+      COMMIT;
+    `);
+  }
 }
 
 function carpetas() {
@@ -102,7 +117,7 @@ function agregarCarpeta(ruta) {
 function canciones() {
   return db.prepare(`
     SELECT c.id, c.nombre, c.titulo, c.artista, c.nombre_manual, c.tipo, c.tamano, c.duracion, c.ancho, c.alto, c.falta,
-           c.stems, c.stems_info,
+           c.stems, c.stems_info, c.bpm, c.primer_beat, c.tono, c.camelot, c.inicio_voz, c.analisis,
            c.carpeta_id, k.ruta AS carpeta
     FROM canciones c JOIN carpetas k ON k.id = c.carpeta_id
     ORDER BY c.falta, COALESCE(NULLIF(c.artista, ''), c.titulo) COLLATE NOCASE, c.titulo COLLATE NOCASE
@@ -237,6 +252,25 @@ function verificarStems(carpetaStems) {
   return n;
 }
 
+// ---------- Análisis ----------
+function siguienteAnalisis() {
+  return db.prepare(`SELECT id, ruta, nombre, tamano, titulo, stems FROM canciones
+                     WHERE analisis IS NULL AND falta = 0 ORDER BY id LIMIT 1`).get() || null;
+}
+function contarAnalisis() {
+  return db.prepare('SELECT COUNT(*) AS n FROM canciones WHERE analisis IS NULL AND falta = 0').get().n;
+}
+function guardarAnalisis(id, r) {
+  const num = v => (Number.isFinite(v) ? v : null);
+  db.prepare(`UPDATE canciones SET analisis = 'listo', analisis_info = NULL, bpm = ?, primer_beat = ?, tono = ?, camelot = ?,
+              inicio_voz = ?, duracion = COALESCE(duracion, ?) WHERE id = ?`)
+    .run(num(r.bpm), num(r.primer_beat), r.tono || null, r.camelot || null, num(r.inicio_voz), num(r.duracion), Number(id));
+}
+function marcarAnalisis(id, estado, info = null) {
+  db.prepare('UPDATE canciones SET analisis = ?, analisis_info = ? WHERE id = ?')
+    .run(estado, info == null ? null : JSON.stringify(info), Number(id));
+}
+
 // Tras borrar una carpeta de stems: sus canciones vuelven a "sin preparar"
 function quitarStemsPorClave(clave) {
   const quitar = db.prepare("UPDATE canciones SET stems = NULL, stems_info = NULL WHERE id = ? AND stems IN ('listo', 'error')");
@@ -256,5 +290,6 @@ function cerrar() {
 
 module.exports = {
   abrir, carpetas, agregarCarpeta, canciones, rutaDe, guardarInfo, editarNombre, escanear, cerrar,
-  claveStems, ARCHIVO_STEMS, encolarStems, quitarStemsPorClave, siguienteEnCola, contarCola, marcarStems, verificarStems, cancionStems,
+  claveStems, ARCHIVO_STEMS, encolarStems, quitarStemsPorClave,
+  siguienteAnalisis, contarAnalisis, guardarAnalisis, marcarAnalisis, siguienteEnCola, contarCola, marcarStems, verificarStems, cancionStems,
 };

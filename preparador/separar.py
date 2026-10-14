@@ -19,21 +19,17 @@ from pathlib import Path
 
 import numpy as np
 import torch
-import imageio_ffmpeg
 import demucs.apply
 from demucs.apply import apply_model
 from demucs.pretrained import get_model
 
-FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+from audio import FFMPEG, SIN_VENTANA, decodificar
 SR = 44100                      # frecuencia con la que trabaja htdemucs
 MODELO = "htdemucs"             # 4 stems: drums, bass, other, vocals
 SEGMENTO = 7                    # segundos por bloque: cabe en 4 GB de VRAM (máximo del modelo: 7.8)
 BITRATE = "320k"                # total de los 8 canales (~96k por stem estéreo): ~9 MB en 4 min
 # Nombres de Demucs → nombres de la mezcladora
 NOMBRES = {"vocals": "voz", "drums": "bateria", "bass": "bajo", "other": "melodia"}
-
-# Evita que se abra una ventana de consola por cada ffmpeg en Windows
-SIN_VENTANA = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 
 _modelo = None
 
@@ -74,14 +70,7 @@ def modelo():
 
 def cargar_audio(ruta: Path) -> torch.Tensor:
     """Decodifica cualquier audio o video a estéreo float32 a 44.1 kHz → tensor (2, muestras)."""
-    proc = subprocess.run(
-        [FFMPEG, "-v", "error", "-nostdin", "-i", str(ruta), "-vn", "-f", "f32le", "-ac", "2", "-ar", str(SR), "-"],
-        capture_output=True, creationflags=SIN_VENTANA,
-    )
-    if proc.returncode != 0 or not proc.stdout:
-        raise RuntimeError(f"ffmpeg no pudo leer el archivo: {proc.stderr.decode(errors='replace')[-300:]}")
-    datos = np.frombuffer(proc.stdout, dtype=np.float32).reshape(-1, 2).T.copy()
-    return torch.from_numpy(datos)
+    return torch.from_numpy(decodificar(ruta, SR, 2))
 
 
 def a_8_canales(stems: dict[str, torch.Tensor]) -> torch.Tensor:

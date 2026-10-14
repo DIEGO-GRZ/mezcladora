@@ -1,5 +1,6 @@
 'use strict';
-// Administra el preparador de stems (preparador/servicio.py) como proceso hijo.
+// Administra el preparador (preparador/servicio.py) como proceso hijo: separa stems (cola que elige el
+// usuario, va primero) y analiza la biblioteca (BPM, tono, forma de onda; automático, va después).
 // Regla: la mezcladora nunca espera a la IA. Todo aquí es en segundo plano y se pausa mientras suena música.
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -8,10 +9,10 @@ const biblioteca = require('./biblioteca');
 
 const APAGAR_TRAS_MS = 2 * 60 * 1000; // sin trabajo por 2 min → se cierra Python y libera ~1 GB de RAM
 
-let cfg = null;            // { carpetaPreparador, carpetaStems, avisar(canal, datos) }
+let cfg = null;            // { carpetaPreparador, carpetaStems, carpetaAnalisis, avisar(canal, datos) }
 let proc = null;
 let listo = false;         // Python terminó de cargar torch/demucs
-let actual = null;         // { id, titulo, pct, etapa }
+let actual = null;         // { id, tipo: 'separar' | 'analizar', titulo, pct, etapa }
 let musica = false;        // hay algún deck sonando
 let pausado = false;
 let temporizadorApagado = null;
@@ -27,14 +28,15 @@ function disponible() {
 function iniciar(opciones) {
   cfg = opciones;
   fs.mkdirSync(cfg.carpetaStems, { recursive: true });
+  fs.mkdirSync(cfg.carpetaAnalisis, { recursive: true });
   try { biblioteca.verificarStems(cfg.carpetaStems); } catch (err) { console.error('Stems:', err); }
   // Si quedó algo en la cola de la vez pasada, se retoma
   setTimeout(bombear, 3000);
 }
 
 function estado() {
-  let enCola = 0;
-  try { enCola = biblioteca.contarCola(); } catch {}
+  let enCola = 0, porAnalizar = 0;
+  try { enCola = biblioteca.contarCola(); porAnalizar = biblioteca.contarAnalisis(); } catch {}
   return {
     disponible: cfg ? disponible() : false,
     activo: !!proc,
@@ -43,10 +45,12 @@ function estado() {
     musica,
     actual: actual && { ...actual },
     enCola,
+    porAnalizar,
   };
 }
 
 function avisarEstado() { cfg?.avisar('preparador:estado', estado()); }
+function avisarAnalisis(id, datos) { cfg?.avisar('preparador:analisis', { id, ...datos }); }
 function avisarCancion(id, stems, info) { cfg?.avisar('preparador:cancion', { id, stems, stems_info: info ? JSON.stringify(info) : null }); }
 
 function asegurarProceso() {
@@ -75,8 +79,13 @@ function asegurarProceso() {
     // Si se cayó a media canción, esa canción queda con error (así no se repite el fallo en bucle)
     if (actual) {
       const info = { mensaje: `El preparador se cerró inesperadamente (código ${codigo})` };
-      try { biblioteca.marcarStems(actual.id, 'error', info); } catch {}
-      avisarCancion(actual.id, 'error', info);
+      if (actual.tipo === 'analizar') {
+        try { biblioteca.marcarAnalisis(actual.id, 'error', info); } catch {}
+        avisarAnalisis(actual.id, { analisis: 'error' });
+      } else {
+        try { biblioteca.marcarStems(actual.id, 'error', info); } catch {}
+        avisarCancion(actual.id, 'error', info);
+      }
       actual = null;
       setTimeout(bombear, 2000);
     }
@@ -103,16 +112,32 @@ function alEvento(e) {
     case 'reanudado': pausado = false; break;
     case 'terminado': {
       const info = { segundos: e.segundos_total, mb: e.mb_en_disco, dispositivo: e.dispositivo, fecha: Date.now() };
-      try { biblioteca.marcarStems(e.id, 'listo', info); } catch (err) { console.error(err); }
+      try {
+        biblioteca.marcarStems(e.id, 'listo', info);
+        biblioteca.marcarAnalisis(e.id, null); // se vuelve a analizar: con stems se puede ubicar dónde entra la voz
+      } catch (err) { console.error(err); }
       avisarCancion(e.id, 'listo', info);
+      actual = null;
+      bombear();
+      break;
+    }
+    case 'analizado': {
+      const datos = { bpm: e.bpm, primer_beat: e.primer_beat, tono: e.tono, camelot: e.camelot, inicio_voz: e.inicio_voz, duracion: e.duracion };
+      try { biblioteca.guardarAnalisis(e.id, datos); } catch (err) { console.error(err); }
+      avisarAnalisis(e.id, { ...datos, analisis: 'listo' });
       actual = null;
       bombear();
       break;
     }
     case 'error': {
       const info = { mensaje: e.mensaje };
-      try { biblioteca.marcarStems(e.id, 'error', info); } catch {}
-      avisarCancion(e.id, 'error', info);
+      if (e.tipo === 'analizar') {
+        try { biblioteca.marcarAnalisis(e.id, 'error', info); } catch {}
+        avisarAnalisis(e.id, { analisis: 'error' });
+      } else {
+        try { biblioteca.marcarStems(e.id, 'error', info); } catch {}
+        avisarCancion(e.id, 'error', info);
+      }
       actual = null;
       bombear();
       break;
@@ -128,13 +153,14 @@ function alEvento(e) {
   avisarEstado();
 }
 
-// Manda la siguiente canción de la cola si no hay nada en curso y no suena música
+// Manda el siguiente trabajo si no hay nada en curso y no suena música. Primero los stems (los pidió el
+// usuario), después el análisis automático de la biblioteca.
 function bombear() {
   clearTimeout(temporizadorApagado);
   if (!cfg || actual) return;
-  let siguiente = null;
-  try { siguiente = biblioteca.siguienteEnCola(); } catch (err) { console.error(err); }
-  if (!siguiente) {
+  let siguiente = null, analizar = null;
+  try { siguiente = biblioteca.siguienteEnCola(); if (!siguiente) analizar = biblioteca.siguienteAnalisis(); } catch (err) { console.error(err); }
+  if (!siguiente && !analizar) {
     // Nada que hacer: apagar Python al rato para liberar memoria
     if (proc) temporizadorApagado = setTimeout(detener, APAGAR_TRAS_MS);
     avisarEstado();
@@ -144,7 +170,18 @@ function bombear() {
   if (!proc) { asegurarProceso(); return; } // al terminar de cargar, 'listo' vuelve a llamar aquí
   if (!listo || musica) return avisarEstado(); // con música sonando no se empieza nada nuevo
 
-  actual = { id: siguiente.id, titulo: siguiente.titulo || siguiente.nombre, pct: 0, etapa: 'leyendo' };
+  if (analizar) {
+    const clave = biblioteca.claveStems(analizar.nombre, analizar.tamano);
+    actual = { id: analizar.id, tipo: 'analizar', titulo: analizar.titulo || analizar.nombre, pct: 0, etapa: 'analizando' };
+    enviar({
+      cmd: 'analizar', id: analizar.id, ruta: analizar.ruta,
+      onda: path.join(cfg.carpetaAnalisis, `${clave}.onda`),
+      stems: analizar.stems === 'listo' ? path.join(cfg.carpetaStems, clave, biblioteca.ARCHIVO_STEMS) : null,
+    });
+    return avisarEstado();
+  }
+
+  actual = { id: siguiente.id, tipo: 'separar', titulo: siguiente.titulo || siguiente.nombre, pct: 0, etapa: 'leyendo' };
   biblioteca.marcarStems(siguiente.id, 'preparando');
   avisarCancion(siguiente.id, 'preparando');
   enviar({
@@ -199,15 +236,15 @@ function detener() {
   if (!p) return;
   // Lo que estaba a medias vuelve a la cola (no es un error: se cerró a propósito)
   if (actual) {
-    try { biblioteca.marcarStems(actual.id, 'cola'); } catch {}
-    actual = null;
+    if (actual.tipo === 'separar') { try { biblioteca.marcarStems(actual.id, 'cola'); } catch {} }
+    actual = null; // un análisis a medias simplemente sigue pendiente
   }
   try { p.stdin.end(); } catch {}            // al cerrarle la entrada, Python termina solo
   setTimeout(() => { try { p.kill(); } catch {} }, 3000);
 }
 
 // ¿Está preparando algo ahora mismo? (no se puede mover la carpeta de stems a media canción)
-function ocupado() { return !!actual; }
+function ocupado() { return actual?.tipo === 'separar'; }
 function usarCarpetaStems(nueva) {
   cfg.carpetaStems = nueva;
   fs.mkdirSync(nueva, { recursive: true });

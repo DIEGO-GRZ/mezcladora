@@ -2,19 +2,22 @@
 
 Electron lo arranca y le habla por la entrada estándar, una orden JSON por línea:
     {"cmd": "separar", "id": 12, "ruta": "C:/.../cancion.mp4", "salida": "C:/.../datos/stems/abc123"}
+    {"cmd": "analizar", "id": 12, "ruta": "...", "onda": "C:/.../datos/analisis/abc123.onda", "stems": "...stems.opus" | null}
     {"cmd": "pausar"}      {"cmd": "reanudar"}      {"cmd": "cancelar", "id": 12}      {"cmd": "salir"}
 
 Responde por la salida estándar, un evento JSON por línea:
     {"ev": "listo"}                                   el servicio arrancó y espera órdenes
     {"ev": "progreso", "id": 12, "etapa": "separando", "pct": 40}
     {"ev": "terminado", "id": 12, ...estadísticas}
-    {"ev": "error", "id": 12, "mensaje": "..."}       {"ev": "cancelado", "id": 12}
+    {"ev": "analizado", "id": 12, "bpm": 128.0, "primer_beat": 0.21, "tono": "Am", "camelot": "8A", "inicio_voz": 15.1, ...}
+    {"ev": "error", "id": 12, "tipo": "separar" | "analizar", "mensaje": "..."}       {"ev": "cancelado", "id": 12}
     {"ev": "pausado"}  {"ev": "reanudado"}
 
 Procesa una canción a la vez. Si se cierra la entrada (la mezcladora se cerró o se cayó), termina solo.
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import queue
@@ -27,6 +30,11 @@ from pathlib import Path
 # La salida estándar es solo para eventos: cualquier otro texto (avisos de librerías) va a stderr
 _salida = sys.stdout
 sys.stdout = sys.stderr
+# Las órdenes se leen directo del descriptor 0 (ver leer_ordenes). sys.stdin queda vacío: si alguna
+# librería lo consulta al importarse, no se queda esperando el bloqueo del hilo lector (eso congelaba
+# el primer análisis, porque librosa se importa después de arrancar el hilo).
+_fd_entrada = sys.stdin.fileno()
+sys.stdin = io.StringIO("")
 
 _lock = threading.Lock()
 
@@ -43,15 +51,49 @@ cancelados: set[int] = set()
 actual: dict | None = None
 
 
+def _leer_bloque() -> bytes:
+    """Un bloque de la entrada; b"" = se cerró.
+    En Windows NO se puede dejar un hilo bloqueado leyendo la tubería: mientras tanto, cargar cualquier DLL
+    nueva (numpy, librosa, torch) se congela. Por eso se pregunta primero si hay datos (PeekNamedPipe)
+    y solo se lee cuando los hay."""
+    if sys.platform != "win32":
+        return os.read(_fd_entrada, 65536)
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+    manejador = msvcrt.get_osfhandle(_fd_entrada)
+    disponibles = wintypes.DWORD(0)
+    peek = ctypes.windll.kernel32.PeekNamedPipe
+    while True:
+        if not peek(wintypes.HANDLE(manejador), None, 0, None, ctypes.byref(disponibles), None):
+            return b""                         # tubería rota: Electron se cerró
+        if disponibles.value:
+            return os.read(_fd_entrada, disponibles.value)
+        time.sleep(0.05)
+
+
+def lineas_entrada():
+    """Lee líneas del descriptor de entrada sin usar sys.stdin (ver arriba)."""
+    pendiente = b""
+    while True:
+        bloque = _leer_bloque()
+        if not bloque:
+            return
+        pendiente += bloque
+        while b"\n" in pendiente:
+            linea, pendiente = pendiente.split(b"\n", 1)
+            yield linea.decode("utf-8", errors="replace")
+
+
 def leer_ordenes() -> None:
-    """Hilo que lee órdenes mientras el hilo principal separa."""
-    for linea in sys.stdin:
+    """Hilo que lee órdenes mientras el hilo principal trabaja."""
+    for linea in lineas_entrada():
         try:
             orden = json.loads(linea)
         except json.JSONDecodeError:
             continue
         cmd = orden.get("cmd")
-        if cmd == "separar":
+        if cmd in ("separar", "analizar"):
             trabajos.put(orden)
         elif cmd == "pausar":
             if not pausa.is_set():
@@ -80,15 +122,29 @@ def limpiar(carpeta: Path) -> None:
         pass
 
 
-def main() -> None:
-    import separar  # importa torch y demucs (tarda unos segundos)
+def analizar(orden: dict) -> None:
+    import analisis  # librosa (sin PyTorch: el análisis no usa la GPU)
+    id_ = int(orden["id"])
+    try:
+        stems = Path(orden["stems"]) if orden.get("stems") else None
+        r = analisis.analizar(Path(orden["ruta"]), Path(orden["onda"]) if orden.get("onda") else None, stems)
+        evento(ev="analizado", id=id_, **r)
+    except Exception as err:
+        traceback.print_exc()
+        evento(ev="error", id=id_, tipo="analizar", mensaje=str(err)[:500])
 
+
+def main() -> None:
     threading.Thread(target=leer_ordenes, daemon=True).start()
     evento(ev="listo")
 
     global actual
     while True:
         orden = trabajos.get()
+        if orden.get("cmd") == "analizar":
+            analizar(orden)
+            continue
+        import separar  # PyTorch y Demucs se cargan solo la primera vez que hay que separar
         id_ = int(orden["id"])
         if id_ in cancelados:
             cancelados.discard(id_)
@@ -121,7 +177,7 @@ def main() -> None:
         except Exception as err:
             traceback.print_exc()
             limpiar(Path(orden["salida"]))
-            evento(ev="error", id=id_, mensaje=str(err)[:500])
+            evento(ev="error", id=id_, tipo="separar", mensaje=str(err)[:500])
         finally:
             actual = None
             try:
